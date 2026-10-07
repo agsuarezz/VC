@@ -4,10 +4,10 @@
 
 **Grupo 33**
 
-- Nombre y apellidos: `AÑADIR`
-- Nombre y apellidos: `AÑADIR`
-
-> Sustituir estos campos por los nombres de los integrantes antes de realizar la entrega.
+- Alvaro García Suarez
+- Enlace github: [Alvaro](https://github.com/agsuarezz)
+- Marcos González Gómez
+- Enlace github: [Marcos](https://github.com/mgz00)
 
 ---
 
