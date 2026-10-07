@@ -4,10 +4,8 @@
 
 **Grupo 33**
 
-- Alvaro García Suarez
-- Enlace github: [Alvaro](https://github.com/agsuarezz)
-- Marcos González Gómez
-- Enlace github: [Marcos](https://github.com/mgz00)
+- Álvaro García Suárez ([Github](https://github.com/agsuarezz))
+- Marcos González Gómez ([Github](https://github.com/mgz00))
 
 ---
 
