@@ -117,19 +117,9 @@ De esta forma, no es necesario realizar reconocimiento de manos o de personas: l
 
 ### Resultado del demostrador
 
-Añadir antes de la entrega una captura del juego en funcionamiento:
-
-```markdown
 ![Juego en funcionamiento](images/juego.png)
-```
 
-También es recomendable incluir un pequeño vídeo o GIF demostrativo del funcionamiento:
-
-```markdown
-[Vídeo de demostración](videos/demo_juego.mp4)
-```
-
-> **Importante:** estos dos archivos deben añadirse al repositorio para que puedan visualizarse desde el README. El vídeo debería mostrar al menos un cristal azul golpeado, un cristal rojo evitado y la actualización del marcador o las vidas.
+![Vídeo de demostración](images/demo_juego.gif)
 
 ---
 
