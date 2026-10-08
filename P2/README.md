@@ -77,10 +77,10 @@ La aplicación muestra cristales en posiciones aleatorias de los laterales de la
 
 Se han añadido dos tipos de cristales:
 
-- **Cristal azul:** debe golpearse antes de que finalice el tiempo disponible. Al romperlo se incrementa la puntuación.
+- **Cristal azul:** debe golpearse antes de que finalice el tiempo disponible mostrado bjo el mismo. Al romperlo se incrementa la puntuación.
 - **Cristal rojo:** debe evitarse. Si el jugador lo golpea pierde una vida, mientras que si deja que desaparezca no recibe ninguna penalización.
 
-El jugador comienza con **3 vidas**. También se pierde una vida cuando un cristal azul desaparece sin haber sido golpeado. La partida termina cuando las vidas llegan a cero.
+El jugador comienza con **3 vidas**. Estas se pierden tanto al romper un cristal rojo como se mencionó anteriormente, como si un cristal azul desaparece sin haber sido golpeado. La partida termina cuando las vidas llegan a cero.
 
 La dificultad aumenta progresivamente: el tiempo disponible para romper los cristales azules disminuye a medida que aumenta la puntuación, con un límite mínimo para evitar que el juego llegue a ser imposible.
 
