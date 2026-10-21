@@ -1,54 +1,173 @@
-## Práctica 3. Detección y reconocimiento de formas
+# Práctica 3 - Visión por Computador
 
-### Contenidos
+## Autoría
 
-[Aspectos cubiertos](#31-aspectos-cubiertos)  
-[Entrega](#32-entrega)
+**Grupo 33**
 
-### 3.1. Aspectos cubiertos
+- Álvaro García Suárez ([Github](https://github.com/agsuarezz))[text](../../../../../Downloads/README.md)
+- Marcos González Gómez ([Github](https://github.com/mgz00))
 
-En esta práctica el objetivo es adquirir nociones para extraer información geométrica de objetos presentes en una imagen, con el fin de caracterizarlos y posteriormente ser capaz de identificarlos de forma automática en categorías. Si bien se reitera en el apartado de la entgera, **no se plantea** para la resolución de las tareas, la utilización de **modelos de aprendizaje profundo**. El cuaderno de la práctica, *VC_P3.ipynb*, contiene diversos ejemplos mostrando variantes para la detección de objetos presentes en la imagen, como paso previo a su caracterización geométrica. En este sentido, se plantea el uso del umbralizado y la detección de contornos. Para el caso concreto de monedas, se considera también la utilización de la transformada de Hough para la localización de formas circulares.
+---
 
+## Descripción
 
-Si bien no es necesario instalar paquetes adicionales para las primeras celdas del cuaderno, de cara a poder obtener la matriz de confusión, es requisito instalar en el *environment* los paquetes *scikit-learn* y *seaborn* para disponer de utilidades para el cálculo de [métricas](https://developers.google.com/machine-learning/crash-course/classification/accuracy-precision-recall?hl=es-419). Con *pip* sería algo como:
+En esta práctica se han aplicado técnicas de procesamiento de imagen con OpenCV para detectar objetos, obtener información sobre ellos y clasificarlos. El trabajo se divide en dos tareas:
 
+1. **Detección y conteo de monedas de euro**, tanto en una imagen estática como mediante webcam, identificando su valor y calculando la cantidad total.
+2. **Detección y clasificación de microplásticos**, distinguiendo entre fragmentos (FRA), pellets (PEL) y alquitrán (TAR) a partir de características visuales y métodos de aprendizaje automático tradicionales.
+
+---
+
+## Trabajo realizado
+
+### 1. Detección, clasificación y suma de monedas
+
+Se parte de la imagen `Monedas.jpg`. Primero se convierte a escala de grises y se utiliza una umbralización automática mediante **Otsu** para separar las monedas del fondo. A continuación, se extraen los contornos y se filtran según su área.
+
+Para estimar el tamaño real de cada moneda se utiliza como referencia la moneda de mayor diámetro, considerada de **2 €**, y se calcula la relación entre píxeles y milímetros. Con esta escala se estima el diámetro del resto de las monedas.
+
+La clasificación combina el **diámetro estimado** con información de **color en el espacio HSV**, diferenciando monedas cobrizas, doradas y bimetálicas. Después se asigna el valor correspondiente y se suman los importes detectados.
+
+#### Resultado en imagen estática
+
+<!-- Añadir captura con las monedas identificadas y el importe total. -->
+
+![Detección de monedas y suma total](images/resultado_monedas.png)
+
+### 2. Demostrador en vivo: detección de monedas con webcam
+
+Se ha añadido una versión en tiempo real que captura fotogramas de la webcam y busca monedas circulares utilizando la **transformada de Hough** (`cv2.HoughCircles`).
+
+El sistema permite calibrar la escala de dos maneras: manualmente, seleccionando una moneda de 1 €, o automáticamente, suponiendo que la moneda detectada de mayor tamaño es de 2 €. Una vez calibrado, identifica las monedas y muestra la suma de su valor.
+
+#### Funcionamiento y controles
+
+- `c`: activar calibración manual; a continuación, hacer clic sobre una moneda de 1 €.
+- `a`: calibrar automáticamente a partir de la moneda más grande, considerada de 2 €.
+- `+` / `-`: ajustar la sensibilidad de detección.
+- `q` o `ESC`: cerrar el demostrador.
+
+La webcam se abre con el índice `1` en el notebook. Si el equipo utiliza otra cámara, se puede cambiar en `cv2.VideoCapture(1)`.
+
+#### Resultado del demostrador
+
+<!-- Añadir captura del detector en funcionamiento. -->
+
+![Detección de monedas con webcam](images/monedas_webcam.png)
+
+<!-- Opcional: añadir GIF del demostrador. -->
+
+![Demostración de monedas en tiempo real](images/demo_monedas.gif)
+
+---
+
+### 3. Segmentación de microplásticos
+
+Para la segunda tarea se utilizan fotografías de entrenamiento correspondientes a tres categorías:
+
+- **FRA:** fragmentos.
+- **PEL:** pellets.
+- **TAR:** alquitrán.
+
+Las imágenes se segmentan comparando sus niveles de brillo con el fondo. Después se aplican filtros por tamaño y se obtienen contornos para aislar las partículas. Los parámetros del conjunto de entrenamiento se definen a partir de sus propias imágenes.
+
+La imagen de prueba presenta unas condiciones de iluminación distintas, por lo que se utiliza un procedimiento de segmentación adaptado a ella. No se emplean las anotaciones del test para ajustar la detección.
+
+#### Resultado de segmentación
+
+<!-- Añadir una imagen que compare la fotografía original y la máscara de segmentación. -->
+
+![Segmentación de partículas de entrenamiento](images/segmentacion_microplasticos.png)
+
+---
+
+### 4. Extracción de características y clasificación
+
+Una vez obtenidos los contornos, se calculan descriptores que permiten representar cada partícula mediante valores numéricos. Entre ellos se incluyen:
+
+- **Circularidad y compacidad**, relacionadas con la forma.
+- **Solidez** y **ocupación del rectángulo delimitador**.
+- **Relación entre ejes**, para distinguir formas alargadas o redondeadas.
+- **Contraste y color relativos al fondo**, para reducir la influencia de diferencias de iluminación.
+
+Para la clasificación se comparan varios modelos tradicionales: **k-NN, SVM, Random Forest y Extra Trees**. Su selección se realiza mediante validación cruzada estratificada sobre los datos de entrenamiento y utilizando **F1 macro** como criterio. El modelo seleccionado se entrena con las partículas disponibles y se aplica después a la imagen de prueba.
+
+#### Resultado de clasificación
+
+<!-- Añadir captura con las partículas del test marcadas y etiquetadas como FRA, PEL o TAR. -->
+
+![Clasificación de microplásticos](images/clasificacion_microplasticos.png)
+
+---
+
+### 5. Evaluación de los resultados
+
+Para evaluar el sistema se utiliza el archivo `MPs_test_bbs.csv`, que contiene las anotaciones de referencia. Este archivo se lee **únicamente en la fase de evaluación**, después de realizar las predicciones.
+
+Las partículas detectadas se emparejan con las anotaciones mediante la intersección sobre unión (**IoU**). A partir de los emparejamientos se calculan las métricas de clasificación y se muestra una matriz de confusión. También se contabilizan las anotaciones que no se detectaron y las detecciones sin correspondencia.
+
+La evaluación distingue así entre **clasificar correctamente las partículas detectadas** y **detectar todas las partículas presentes**: una buena precisión de clasificación no implica necesariamente una detección completa.
+
+#### Resultados de la evaluación
+
+<!-- Añadir matriz de confusión y, si interesa, una captura de las métricas impresas. -->
+
+![Matriz de confusión](images/matriz_confusion_microplasticos.png)
+
+![Métricas de evaluación](images/metricas_microplasticos.png)
+
+---
+
+## Requisitos
+
+La práctica utiliza Python y las siguientes librerías:
+
+```text
+opencv-python
+numpy
+matplotlib
+scikit-learn
 ```
-pip install scikit-learn seaborn
+
+Pueden instalarse mediante:
+
+```bash
+pip install opencv-python numpy matplotlib scikit-learn notebook
 ```
 
-### 3.2. Entrega
+Para el demostrador de monedas es necesario disponer de una webcam accesible desde OpenCV.
 
-Para la entrega de esta práctica, son **dos las tareas planteadas**. Para ninguna de ellas deben integrar modelos de **aprendizaje profundo**:
+Los archivos de entrada deben estar disponibles en el directorio de trabajo del notebook:
 
-- En la **primera tarea**, el reto o tarea consiste en determinar la cantidad de dinero y monedas presentes en la imagen captada en vivo con la webcam. Una extensión válida sería la presencia de objetos que no sean monedas en la imagen analizada.
+```text
+Monedas.jpg
+fragment-03-olympus-10-01-2020.JPG
+pellet-03-olympus-10-01-2020.JPG
+tar-03-olympus-10-01-2020.JPG
+MPs_test.jpg
+MPs_test_bbs.csv
+```
 
-- En la **segunda tarea**, deben desarrollar un procedimiento que extraiga partículas de una imagen de test, y las clasifique en tres clases posibles. Deben tener claro que la imagen de test no puede utilizarse para ajustar el procedimiento, para ello cuentan con las imágenes de entrenamiento. En este sentido, además de la imagen de test *MPs_test.jpg* con su correspondiente archivo de anotaciones *MPs_test_bbs.csv*, se proporcionan de cara al entrenamiento, imágenes de tres clases de objetos recogidos en playas canarias: fragmentos plásticos, *pellets* y alquitrán. Para cada categoría se proporciona una imagen completa y una subimagen de la misma. Las dos primeras categorías se consideran microplásticos cuando miden menos de 5mm, mientras que la tercera es muy habitual encontrarlas en playas canarias. Observar que dado que cada imagen contiene muestras de una única categoría, a efectos prácticos disponen de un conjunto de datos anotado. La tarea propuesta consiste en hacer uso de las imágenes de entrenamiento proporcionadas, extraer de forma automatizada las partículas e identificar patrones en sus características geométricas y de apariencia o entrenar un clasificador con ellas, que puedan permitir la clasificación de las partículas en la imagen de test. El resultado obtenido en la imagen de test, debe mostrarse por medio las métricas mostradas en el cuaderno, incluyendo la matriz de confusión, donde se comparan las anotaciones con las predicciones.
+---
 
-![Confusión](MatrizConfu.png)  
-*Ejemplo de matriz de confusión*
+## Ejecución
 
-A la hora de considerar posibles características geométricas, como punto de partida para la extracción de descriptores de las partículas, se proporciona enlace al trabajo [SMACC: A System for Microplastics Automatic Counting and Classification](https://doi.org/10.1109/ACCESS.2020.2970498) en el que se adoptan algunas propiedades geométricas para dicho fin. De forma resumida, las características geométricas utilizadas en dicho trabajo fueron:
+Abrir el notebook unificado:
 
-- Área en píxeles (A)
-- Perímetro en píxeles (P)
-- Compacidad (relación del cuadrado del perímetro con el área C=P^2/A)
-- Relación del área de la partícula con el área del contenedor que la contiene
-- Relación del ancho y el alto del contenedor
-- Relación entre los ejes de la elipse ajustada
-- Definido el centroide, relación entre las distancias menor y mayor al contorno
+```bash
+jupyter notebook VC_P3_Monedas_y_Microplasticos_COMPLETO.ipynb
+```
 
-En relación a la segmentación de las partículas, una probable primera observación es que la aplicación del umbralizado para separarlas del fondo, es delicada. Preprocesamiento como el ecualizado del histograma, suavizar la imagen de entrada o reducir su tamaño, o aplicar heurísticas basadas en el tamaño mínimo y máximo de los contornos localizados, y la distancia mínima entre ellos, pueden ayudar a filtrar falsas detecciones, pero a pesar de ello, será un desafío obtener una separación perfecta para todas las imágenes con la misma estrategia. Añadir, que la imagen de fragmentos contiene unas 80 partículas, la de *pellets* unas 55 y la de alquitrán unas 54.
+Ejecutar las celdas en orden. La primera tarea procesa la imagen de monedas y permite ejecutar el demostrador con webcam. La segunda realiza el entrenamiento, la clasificación de microplásticos y la evaluación final.
 
-<!--
-![Contornos](Output.jpg)  
-*Ejemplo ilustrativo contornos detectados en la imagen de fragmentos*
+Para el demostrador de monedas, es necesario mantener activa la ventana de OpenCV durante la interacción.
 
-Si quieren ir más allá, sugerir explorar técnicas de segmentación recientes y potentes como [Segment anything o SAM](https://segment-anything.com) o [OneFormer](https://github.com/SHI-Labs/OneFormer), y extensiones como , [SAM 2](https://github.com/facebookresearch/segment-anything-2), [FastSAM](https://github.com/CASIA-IVA-Lab/FastSAM) o [Count anything](https://github.com/ylqi/Count-Anything). No duden en compartir otras alternativas que descubran.-->
+---
 
-Como en las prácticas previas, la entrega se realizará a través del campus virtual, remitiendo un enlace al repositorio **github**, donde se alojará el **cuaderno o cuadernos** de resolución de las tareas, además de su correspondiente **README** describiendo el proceso adoptado para resolver cada tarea, detallar la asistencia recibida por herramientas de IA, integrando de imágenes ilustrativas, además de las métricas obtenidas y matriz de confusión de la segunda tarea.
+## Conclusiones
 
-<!---Momentos en trabajo de Nayar sobre Binary images https://cave.cs.columbia.edu/Statics/monographs/Binary%20Images%20FPCV-1-3.pdf -->
+La primera tarea permite utilizar **umbrales, contornos, medidas geométricas y análisis de color** para detectar monedas e inferir su valor. La calibración de escala resulta fundamental, ya que los diámetros medidos en píxeles dependen de la distancia a la cámara y del tamaño de la imagen. En la webcam, la transformada de Hough permite extender la detección a fotogramas sucesivos.
 
+En la segunda tarea se combinan técnicas clásicas de segmentación con características geométricas y de apariencia para distinguir tipos de microplásticos sin recurrir a aprendizaje profundo. La detección puede verse afectada por la iluminación, el fondo y la similitud visual entre partículas. Además, la validación sobre partículas extraídas de pocas fotografías puede ofrecer resultados más optimistas que una evaluación con imágenes completamente nuevas.
 
-***
-Bajo licencia de Creative Commons Reconocimiento - No Comercial 4.0 Internacional
+En conjunto, las dos tareas muestran cómo pasar de la **detección de objetos** a la **extracción de información, clasificación y evaluación de resultados** mediante herramientas de visión por computador.
