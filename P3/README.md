@@ -4,7 +4,7 @@
 
 **Grupo 33**
 
-- Álvaro García Suárez ([Github](https://github.com/agsuarezz))[text](../../../../../Downloads/README.md)
+- Álvaro García Suárez ([Github](https://github.com/agsuarezz))
 - Marcos González Gómez ([Github](https://github.com/mgz00))
 
 ---
@@ -30,9 +30,9 @@ La clasificación combina el **diámetro estimado** con información de **color 
 
 #### Resultado en imagen estática
 
-<!-- Añadir captura con las monedas identificadas y el importe total. -->
-
 ![Detección de monedas y suma total](images/resultado_monedas.png)
+
+En la imagen estática se identifican **8 monedas** y se obtiene una suma de **3,88 €**. La detección funciona correctamente en este ejemplo, aunque el resultado depende de que los contornos estén bien separados del fondo y de que el diámetro estimado permita distinguir valores similares.
 
 ### 2. Demostrador en vivo: detección de monedas con webcam
 
@@ -51,13 +51,15 @@ La webcam se abre con el índice `1` en el notebook. Si el equipo utiliza otra c
 
 #### Resultado del demostrador
 
-<!-- Añadir captura del detector en funcionamiento. -->
-
 ![Detección de monedas con webcam](images/monedas_webcam.png)
 
-<!-- Opcional: añadir GIF del demostrador. -->
+En la captura del demostrador se muestran **11 monedas detectadas** con un total calculado de **5,03 €**. Se consigue identificar monedas de diferentes valores y actualizar la suma sobre la imagen capturada por la cámara.
 
-![Demostración de monedas en tiempo real](images/demo_monedas.gif)
+Durante las pruebas hemos observado que **la iluminación influye mucho en la detección**. Cuando la luz incide directamente sobre las monedas, sus superficies metálicas producen reflejos y zonas muy brillantes. Estos cambios de contraste pueden dificultar la detección de sus bordes o alterar el análisis del color, especialmente en el funcionamiento con webcam.
+
+También hemos comprobado que, con nuestra implementación y las condiciones de prueba utilizadas, **los fondos negros funcionan mejor que los fondos blancos**. Sobre un fondo oscuro las monedas suelen distinguirse con más claridad y los contornos aparecen más definidos. En fondos claros, algunas zonas de las monedas pueden presentar un contraste menor con el entorno, sobre todo si hay reflejos. Esta es una explicación probable del comportamiento observado, no una comprobación experimental aislada del efecto del fondo.
+
+<!-- Opcional: añadir una comparación de la misma disposición de monedas sobre fondo oscuro y claro. -->
 
 ---
 
@@ -75,9 +77,17 @@ La imagen de prueba presenta unas condiciones de iluminación distintas, por lo 
 
 #### Resultado de segmentación
 
-<!-- Añadir una imagen que compare la fotografía original y la máscara de segmentación. -->
+![Segmentación de partículas de entrenamiento FRA y PEL](images/segmentacion_microplasticos.png)
 
-![Segmentación de partículas de entrenamiento](images/segmentacion_microplasticos.png)
+![Segmentación de partículas de entrenamiento TAR](images/segmentacion_microplasticos.2.png)
+
+En las imágenes de entrenamiento se han obtenido **402 detecciones para FRA**, **61 para PEL** y **49 para TAR**. Estas cantidades corresponden a los contornos detectados por el procedimiento, no necesariamente al número real de partículas presentes.
+
+La segmentación de **PEL** resulta relativamente más limpia, porque muchas partículas son redondeadas y se distinguen del fondo. En **TAR** se consiguen detectar varias partículas oscuras, pero también quedan otras sin seleccionar en la máscara. Esto limita los ejemplos disponibles para el entrenamiento de esa clase.
+
+El principal problema se observa en **FRA**: además de partículas reales, la máscara presenta **ruido en determinadas zonas del fondo, especialmente hacia el borde inferior de la imagen**. Este ruido produce contornos adicionales y puede hacer que el conjunto de entrenamiento contenga detecciones que no corresponden a partículas válidas. Por ello, las 402 detecciones de FRA no deben interpretarse como 402 fragmentos correctamente segmentados.
+
+<!-- Opcional: añadir capturas ampliadas del ruido en FRA y de las partículas TAR que no se segmentan. -->
 
 ---
 
@@ -94,9 +104,9 @@ Para la clasificación se comparan varios modelos tradicionales: **k-NN, SVM, Ra
 
 #### Resultado de clasificación
 
-<!-- Añadir captura con las partículas del test marcadas y etiquetadas como FRA, PEL o TAR. -->
-
 ![Clasificación de microplásticos](images/clasificacion_microplasticos.png)
+
+En la imagen de prueba se obtienen **100 detecciones**, de las cuales el modelo clasifica **95 como FRA**, **5 como PEL** y **ninguna como TAR**. La visualización permite observar que el sistema localiza diversas partículas, pero existe una tendencia muy marcada a predecir la categoría FRA, incluso en objetos visualmente diferentes. Esto apunta a un problema de discriminación entre categorías y es especialmente evidente para TAR.
 
 ---
 
@@ -110,13 +120,38 @@ La evaluación distingue así entre **clasificar correctamente las partículas d
 
 #### Resultados de la evaluación
 
-<!-- Añadir matriz de confusión y, si interesa, una captura de las métricas impresas. -->
-
 ![Matriz de confusión](images/matriz_confusion_microplasticos.png)
 
-![Métricas de evaluación](images/metricas_microplasticos.png)
+En el test hay **120 partículas anotadas**. De las 100 detecciones generadas, **88 se emparejan** con anotaciones, **32 partículas anotadas no se detectan** y **12 detecciones no encuentran correspondencia**. La **cobertura de detección es del 73,3 %**.
+
+Entre las 88 partículas emparejadas, el modelo clasifica correctamente **56**, con una **exactitud (accuracy) del 63,6 %**. Por categoría, el resultado es desigual:
+
+| Categoría | Precisión | Recall | F1-score | Aciertos / evaluadas |
+| --- | ---: | ---: | ---: | ---: |
+| FRA | 0,627 | 0,981 | 0,765 | 52 / 53 |
+| PEL | 0,800 | 0,138 | 0,235 | 4 / 29 |
+| TAR | 0,000 | 0,000 | 0,000 | 0 / 6 |
+
+El **F1 macro es 0,333**, inferior a la exactitud global, lo que refleja que el rendimiento no es equilibrado entre las tres clases. FRA obtiene un recall muy alto, pero muchas partículas de otras clases también se clasifican como FRA. En concreto, **25 de las 29 partículas PEL emparejadas** y **las 6 TAR emparejadas** se etiquetan erróneamente como FRA.
+
+La dificultad con **TAR** no está solo en detectar sus partículas durante el entrenamiento: el clasificador final **no predice ninguna partícula como TAR en la prueba**. Entre las posibles causas están la segmentación incompleta de las partículas oscuras, el menor número de ejemplos detectados de TAR y la similitud de algunas de sus características con las de FRA. No es posible atribuir el fallo a una única causa solo a partir de estas capturas.
+
+Estas métricas de clasificación se calculan **únicamente sobre las 88 partículas emparejadas**, por lo que el 63,6 % de accuracy no representa el porcentaje de aciertos sobre todas las 120 partículas anotadas.
 
 ---
+
+## Conclusiones
+
+En la **detección de monedas**, el procedimiento permite localizar las monedas, estimar sus diámetros y sumar su valor. En la imagen estática se obtiene un total de **3,88 € para 8 monedas** y el demostrador con webcam muestra **5,03 € para 11 monedas** en la captura presentada. La principal limitación observada durante las pruebas ha sido la **dependencia de la iluminación**: los reflejos de las superficies metálicas dificultan la extracción de contornos y pueden afectar a la clasificación por color. Con nuestra configuración, el sistema ha funcionado **mejor sobre fondos negros que sobre fondos blancos**, probablemente por la mayor separación visual entre las monedas y el fondo.
+
+En la **segmentación de microplásticos** se observan diferencias importantes según la categoría. **PEL** presenta contornos relativamente limpios, mientras que en **TAR** quedan partículas sin detectar. La imagen de **FRA** introduce ruido del fondo y numerosos contornos adicionales, que pueden perjudicar los datos utilizados para entrenar el clasificador. La calidad de esta etapa es especialmente importante, ya que el modelo aprende a partir de las regiones previamente segmentadas.
+
+Los resultados de la **clasificación de microplásticos** muestran una precisión global moderada, pero desequilibrada. Se detectan 100 regiones en la imagen de prueba y se consigue emparejar 88 con las 120 anotaciones reales (**73,3 % de cobertura**). De las partículas emparejadas, se clasifican correctamente 56 (**63,6 % de accuracy**). El clasificador reconoce bien buena parte de los fragmentos FRA, pero **confunde la mayoría de los pellets con fragmentos y no consigue identificar correctamente ningún TAR**. Esto queda reflejado en el **F1 macro de 0,333**, que evidencia la dificultad de distinguir las tres categorías de forma equilibrada.
+
+En conjunto, la práctica demuestra que es posible realizar detección, medida y clasificación de objetos con técnicas clásicas de visión por computador y aprendizaje automático tradicional, sin recurrir a aprendizaje profundo. También permite comprobar que **la iluminación, el fondo y la calidad de la segmentación condicionan mucho el resultado final**, y que una cifra de acierto global puede ocultar errores relevantes en determinadas categorías.
+
+---
+
 
 ## Requisitos
 
@@ -162,12 +197,3 @@ Ejecutar las celdas en orden. La primera tarea procesa la imagen de monedas y pe
 
 Para el demostrador de monedas, es necesario mantener activa la ventana de OpenCV durante la interacción.
 
----
-
-## Conclusiones
-
-La primera tarea permite utilizar **umbrales, contornos, medidas geométricas y análisis de color** para detectar monedas e inferir su valor. La calibración de escala resulta fundamental, ya que los diámetros medidos en píxeles dependen de la distancia a la cámara y del tamaño de la imagen. En la webcam, la transformada de Hough permite extender la detección a fotogramas sucesivos.
-
-En la segunda tarea se combinan técnicas clásicas de segmentación con características geométricas y de apariencia para distinguir tipos de microplásticos sin recurrir a aprendizaje profundo. La detección puede verse afectada por la iluminación, el fondo y la similitud visual entre partículas. Además, la validación sobre partículas extraídas de pocas fotografías puede ofrecer resultados más optimistas que una evaluación con imágenes completamente nuevas.
-
-En conjunto, las dos tareas muestran cómo pasar de la **detección de objetos** a la **extracción de información, clasificación y evaluación de resultados** mediante herramientas de visión por computador.
