@@ -1,6 +1,10 @@
-
-
 import os, sys, subprocess, urllib.request
+
+REPO = "RT-DETR/rtdetrv2_pytorch"
+repo_abs = os.path.abspath(REPO)
+if repo_abs not in sys.path:
+    sys.path.insert(0, repo_abs)
+
 import cv2
 import numpy as np
 import torch
@@ -8,8 +12,6 @@ from PIL import Image
 from src.core import YAMLConfig
 from src.core.yaml_utils import load_config      # next to your YAMLConfig import
 
-
-REPO = "RT-DETR/rtdetrv2_pytorch"
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Para usar el modelo, necesitamos descargar los pesos oficiales desde el Repositorio.
@@ -58,7 +60,6 @@ def load_rtdetr(family="v2", size="s", device=DEVICE):
         os.makedirs("weights", exist_ok=True)
         urllib.request.urlretrieve(
             f"https://github.com/lyuwenyu/storage/releases/download/{tag}/{wfile}", WEIGHTS)
-
 
     
     # Teniendo el archivo de configuración y los pesos descargados, cargamos el modelo y el postprocesador.

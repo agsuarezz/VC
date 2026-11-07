@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Archivos pesados de datos y zips (>100 MB)
+*.zip
+C0142.MP4
+resultado_C0142_tracking.mp4
+resultado_C0142_anonimizado.mp4
+annotations/
+dataset/
+runs/
+weights/
+.venv/
+RT-DETR/
+
+# Dataset de imágenes raw (7 GB) - se preservan solo las figuras del README
+images/*
+!images/dirs.png
+!images/rtdetr2l-detection.png
+!images/yolo11-detect.jpg
+!images/yolo11-pose.jpg
+!images/yolo11-seg.jpg
+!images/yolov8-tracker.png
+!images/resultado_tracking_hud.jpg
+!images/resultado_anonimizacion.jpg
+!images/metricas_entrenamiento.png
+!images/confusion_matrix_matriculas.png
+!images/prediccion_val_matriculas.jpg
+
+# Archivos de checkpoint
+*.pth
+*.pt.cache
