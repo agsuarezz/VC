@@ -20,7 +20,7 @@ El trabajo aborda el **100% de los requisitos obligatorios** especificados en la
   - Entrenamiento de un modelo detector de matrículas personalizado en formato YOLO a partir de un conjunto de datos real.
   - Localización de matrículas y asignación espacial al vehículo correspondiente.
   - Conteo acumulado de instancias únicas y desglose por clases sobre la secuencia completa (2.832 fotogramas, 1 min 53 s).
-  - Renderizado y volcado a disco del vídeo anotado completo con HUD en tiempo real y trayectorias continuas (`resultado_C0142_tracking.mp4`).
+  - Renderizado y volcado a disco del vídeo anotado completo con HUD en tiempo real y recuadros de seguimiento (`resultado_C0142_tracking.mp4`).
   - Generación del archivo CSV estructurado con el esquema exacto de 15 columnas con más de 21.000 registros (`resultado_C0142_detecciones.csv`).
   - Cuaderno reproducible y auto-contenido: `VC_P4_Entrega_Grupo33.ipynb`.
 - **Tareas Extras (+1.75 puntos)**:
@@ -130,8 +130,9 @@ flowchart LR
 
 El sistema procesa la secuencia completa de evaluación `C0142.MP4` (**2.832 fotogramas, 113.28 segundos**) integrando todos los módulos en tiempo real:
 
-1. **Seguimiento con BoT-SORT**: asignación unívoca y persistente de `track_id` a personas y vehículos a lo largo del tiempo (`persist=True`), trazando estelas de movimiento continuo.
-2. **Asociación Vehículo <-> Matrícula**: para cada matrícula detectada (por deep learning o contornos), se calcula el centroide $(mcx, mcy)$ y se asigna al vehículo cuyo contenedor lo englobe.
+1. **Seguimiento con BoT-SORT y reidentificación**: las detecciones débiles pueden continuar un seguimiento y las de mayor confianza pueden iniciar uno nuevo. El seguimiento conserva los IDs perdidos hasta 100 fotogramas y usa la posición y la apariencia para asociar las reapariciones. El historial de posición se usa para medir el flujo y cada ID de vehículo se cuenta en su categoría más frecuente.
+   En la cámara fija de `C0142.MP4` se calibran siete posiciones de la fila aparcada cuya ocupación se conserva a lo largo del clip. Las cajas que coinciden con una posición comparten un ID de aparcamiento aunque BoT-SORT cambie su ID interno. Los recuadros parciales de la fila requieren una coincidencia con la plaza o continuidad fuera de ella para sumar otro vehículo.
+2. **Asociación Vehículo y Matrícula**: se asigna la placa al vehículo que mejor contiene su recuadro. Si el detector falla en la primera pasada, se vuelve a buscar en el recorte del vehículo y, cuando hay más resolución disponible, en el fotograma a mayor escala. Una detección de respaldo se registra cuando reaparece en una posición similar.
 3. **HUD Informativo en Vivo**: monitorización gráfica superior que refleja fotogramas, FPS, conteos de peatones, desglose de vehículos (coches, buses, camiones) y estadísticas de tráfico.
 
 ![Resultado de Seguimiento y HUD](images/resultado_tracking_hud.jpg)
@@ -140,19 +141,18 @@ El sistema procesa la secuencia completa de evaluación `C0142.MP4` (**2.832 fot
 ### Resultados Globales sobre la Secuencia Completa:
 - **Modelo General de Detección**: **YOLO11 Medium (`yolo11m.pt`)** con inferencia a alta resolución (**`imgsz=1280`**), optimizado para resolución nativa 1080p sin pérdida de detalle en objetos pequeños ni lejanos.
 - **Fotogramas procesados**: 2.832 fotogramas (100% del vídeo).
-- **Total personas únicas detectadas**: 130 peatones (alta sensibilidad para personas lejanas en la acera opuesta).
-- **Total vehículos únicos detectados**: 314 vehículos:
-  - Coches (`car`): 283
-  - Autobuses (`bus`): 14
-  - Camiones (`truck`): 28
-  - Motocicletas (`motorcycle`): 7
-  - Bicicletas (`bicycle`): 3
-- **Vehículos únicos con matrícula identificada**: 57 vehículos.
-- **Total detecciones de matrícula**: 4.570 (aplicando la regla estricta de unicidad de **máximo 1 sola matrícula por coche** en cada fotograma, conservando la candidata de mayor confianza y eliminando falsos positivos de contornos en rejillas o parachoques).
-- **Flujo direccional**:
-  - Sentido Derecha a Izquierda: 43 vehículos.
-  - Sentido Izquierda a Derecha: 37 vehículos.
-  - Salidas laterales por la derecha: 6.
+- **Total personas únicas detectadas**: 89 IDs.
+- **Total vehículos únicos detectados**: 105 IDs.
+  - Coches (`car`): 85
+  - Autobuses (`bus`): 4
+  - Camiones (`truck`): 7
+  - Motocicletas (`motorcycle`): 5
+  - Bicicletas (`bicycle`): 4
+- **Matrículas registradas**: 45, una por ID de vehículo.
+- **Flujo direccional de personas y vehículos en movimiento**:
+  - Sentido derecha a izquierda: 44 IDs.
+  - Sentido izquierda a derecha: 40 IDs.
+  - Salidas laterales por la derecha: 7.
   - Salidas laterales por la izquierda: 4.
 
 ---
@@ -160,8 +160,8 @@ El sistema procesa la secuencia completa de evaluación `C0142.MP4` (**2.832 fot
 ## 6. Extras: Flujo Direccional y Anonimización
 
 ### Extra 1 (+0.25p): Flujo Direccional y Salidas Laterales
-- Se monitoriza la evolución espacial de la estela de cada `track_id` calculando el vector horizontal de desplazamiento $\Delta x = x_t - x_{t-N}$.
-- Clasificación de trayectorias en flujo descendente/ascendente y detección de salidas perimetrales.
+- Se calcula el desplazamiento horizontal $\Delta x = x_t - x_{t-N}$ con el historial de cada `track_id`.
+- Los vehículos identificados en las plazas calibradas se excluyen del flujo y de las salidas laterales. Siguen figurando en el total de vehículos.
 
 ### Extra 4 (+0.25p): Anonimización de Privacidad
 - Modo conmutable de privacidad para el cumplimiento de normativas de protección de datos (RGPD).
@@ -182,9 +182,10 @@ El procesado genera el fichero CSV con las **15 columnas exactas** estipuladas e
 fotograma,tipo_objeto,confianza,identificador_tracking,x1,y1,x2,y2,matrícula_en_su_caso,confianza,mx1,my1,mx2,my2,texto_matricula
 ```
 
-- **Total de registros generados**: **36.886 detecciones** a lo largo de los 2.832 fotogramas.
+- **Total de registros generados**: **34.867 detecciones** a lo largo de los 2.832 fotogramas.
 - **Para personas**: los campos de matrícula quedan vacíos / `None`.
-- **Para vehículos**: si se localiza la matrícula, se registran las coordenadas `mx1, my1, mx2, my2`, la confianza del detector y el identificador asociado del coche.
+- **Para vehículos**: la primera matrícula localizada para cada ID de seguimiento se registra con `Si`, sus coordenadas `mx1, my1, mx2, my2` y la confianza del detector. Las demás filas del vehículo conservan el seguimiento y dejan vacíos los campos de matrícula.
+- En el vídeo, la etiqueta `Matricula #ID` usa el ID del vehículo. La caja acompaña al vehículo entre detecciones y se actualiza cuando el detector vuelve a localizar la placa.
 
 ```csv
 fotograma,tipo_objeto,confianza,identificador_tracking,x1,y1,x2,y2,matrícula_en_su_caso,confianza,mx1,my1,mx2,my2,texto_matricula
@@ -206,11 +207,13 @@ P4/
 ├── prepare_dataset.py               # Script conversor de JSONs a formato YOLO (train/val/test)
 ├── train_plates.py                  # Script de entrenamiento en GPU
 ├── traffic_pipeline.py              # Núcleo modular del pipeline (tracking, contornos, HUD, flujo)
+├── botsort_trafico.yaml              # Ajustes de asociación e inicio de seguimientos
+├── parking_identity.py              # IDs de la fila aparcada en la escena fija C0142
 ├── run_pipeline.py                  # Interfaz de línea de comandos para procesar secuencias
 ├── load_rtdetr.py                   # Cargador oficial del modelo RT-DETR v2
 ├── test_rtdetr_eval.py              # Benchmark comparativo de YOLO vs RT-DETR
 ├── resultado_C0142_tracking.mp4     # Vídeo anotado completo (2.832 frames, 1080p, 1m 53s)
-├── resultado_C0142_detecciones.csv  # Archivo CSV oficial (21.265 filas, 15 columnas exigidas)
+├── resultado_C0142_detecciones.csv  # Archivo CSV oficial con las 15 columnas exigidas
 ├── resultado_C0142_anonimizado.mp4  # Vídeo con modo de anonimización activo
 └── images/                          # Capturas y gráficas ilustrativas para la memoria
 ```

@@ -1,0 +1,13 @@
+# Configuración BoT-SORT para el vídeo de tráfico de P4.
+tracker_type: botsort
+track_high_thresh: 0.35
+track_low_thresh: 0.10
+new_track_thresh: 0.50
+track_buffer: 100 # 4 s a 25 FPS para recuperar vehículos tras una oclusión.
+match_thresh: 0.65
+fuse_score: false
+gmc_method: sparseOptFlow
+proximity_thresh: 0.10
+appearance_thresh: 0.88
+with_reid: true
+model: auto

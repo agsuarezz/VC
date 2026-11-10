@@ -9,7 +9,7 @@ def main():
     parser.add_argument("--output_csv", default="resultado_C0142_detecciones.csv", help="CSV de salida")
     parser.add_argument("--max_frames", type=int, default=None, help="Número máximo de fotogramas a procesar (None para vídeo completo)")
     parser.add_argument("--anonymize", action="store_true", help="Activar anonimización de privacidad (Extra 4)")
-    parser.add_argument("--conf", type=float, default=0.35, help="Umbral de confianza")
+    parser.add_argument("--conf", type=float, default=0.10, help="Umbral mínimo de confianza de las detecciones enviadas al tracker")
     parser.add_argument("--model", default="yolo11m.pt", help="Modelo YOLO general (default: yolo11m.pt)")
     parser.add_argument("--imgsz", type=int, default=1280, help="Resolución de inferencia (default: 1280)")
     parser.add_argument("--use_contours", action="store_true", help="Usar fallback de contornos morfológicos para matrículas (Extra 3)")
