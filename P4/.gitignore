@@ -28,6 +28,10 @@ images/*
 !images/metricas_entrenamiento.png
 !images/confusion_matrix_matriculas.png
 !images/prediccion_val_matriculas.jpg
+!images/resultado_tracking_ocr_hud.jpg
+!images/comparativa_ocr_rendimiento_tiempos.png
+!images/comparativa_ocr_resolucion_errores.png
+!images/ejemplos_comparativa_ocr.png
 
 # Archivos de checkpoint
 *.pth

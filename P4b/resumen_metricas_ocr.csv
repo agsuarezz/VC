@@ -1,0 +1,5 @@
+Modelo,Exact Match (%),Char Accuracy (%),Similitud Media (%),Levenshtein Medio,Latencia Media (ms),Latencia Mediana (ms),Latencia P95 (ms),Throughput (img/s),VRAM Pico (MB)
+EasyOCR (Crudo),49.07,64.1,82.82,2.522,27.19,22.06,63.38,36.77,378.8
+EasyOCR + Post-proc. ES,59.01,77.9,84.54,1.553,27.19,22.06,63.38,36.77,378.8
+SmolVLM-Instruct (Crudo),89.44,95.58,96.39,0.311,409.11,409.69,561.71,2.44,4882.5
+SmolVLM-Instruct + Post-proc. ES,89.44,95.67,96.48,0.304,409.11,409.69,561.71,2.44,4882.5

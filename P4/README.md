@@ -1,4 +1,4 @@
-# Práctica 4 - Visión por Computador: Detección de Vehículos y Matrículas
+# Práctica 4 y 4b - Visión por Computador: Detección, Seguimiento y OCR de Vehículos y Matrículas
 
 ## Autoría
 
@@ -11,18 +11,18 @@
 
 ## Descripción del Proyecto
 
-El objetivo de esta práctica es desarrollar un prototipo integral de visión artificial sobre secuencias de vídeo para la **detección y seguimiento persistente de vehículos y personas**, la **localización de matrículas**, el **conteo acumulado por categorías**, el **análisis del flujo direccional del tráfico**, la **anonimización de privacidad** y la **exportación estandarizada de métricas (vídeo anotado y CSV oficial)**.
+El objetivo de este proyecto integral (**Práctica 4 + Práctica 4b**) es desarrollar un sistema completo de visión artificial sobre secuencias de vídeo para la **detección y seguimiento persistente de vehículos y personas**, la **localización de matrículas**, el **reconocimiento óptico de caracteres (OCR) de las placas visibles**, el **conteo acumulado por categorías**, el **análisis del flujo direccional del tráfico**, la **anonimización de privacidad** y la **exportación estandarizada de métricas (vídeo anotado y CSV oficial de 15 columnas)**. Asímismo, se incluye el estudio experimental comparativo entre un **OCR clásico neuronal (`EasyOCR`)** y un **Modelo de Lenguaje Visual (`SmolVLM-Instruct`)**.
 
-El trabajo aborda el **100% de los requisitos obligatorios** especificados en las directrices de la asignatura, así como la totalidad de las tareas extras propuestas (**+1.75 puntos adicionales**):
+El trabajo aborda el **100% de los requisitos obligatorios** de ambas entregas (P4 y P4b), así como la totalidad de las tareas extras propuestas (**+1.75 puntos adicionales**):
 
-- **Requisitos Obligatorios**:
+- **Requisitos Obligatorios (P4 + P4b)**:
   - Detección y seguimiento persistente de personas y vehículos (`car`, `bus`, `truck`, `motorcycle`, `bicycle`) mediante **YOLO11** y **BoT-SORT** (`persist=True`).
-  - Entrenamiento de un modelo detector de matrículas personalizado en formato YOLO a partir de un conjunto de datos real.
-  - Localización de matrículas y asignación espacial al vehículo correspondiente.
+  - Entrenamiento de un modelo detector de matrículas personalizado en formato YOLO a partir de un conjunto de datos real (`best_matriculas.pt`).
+  - Localización de matrículas, asignación espacial al vehículo correspondiente y **reconocimiento OCR del texto de cada matrícula visible** (`PlateOCR` híbrido EasyOCR + SmolVLM con validación sintáctica española).
   - Conteo acumulado de instancias únicas y desglose por clases sobre la secuencia completa (2.832 fotogramas, 1 min 53 s).
-  - Renderizado y volcado a disco del vídeo anotado completo con HUD en tiempo real y recuadros de seguimiento (`resultado_C0142_tracking.mp4`).
-  - Generación del archivo CSV estructurado con el esquema exacto de 15 columnas con más de 21.000 registros (`resultado_C0142_detecciones.csv`).
-  - Cuaderno reproducible y auto-contenido: `VC_P4_Entrega_Grupo33.ipynb`.
+  - Renderizado y volcado a disco del vídeo anotado completo con HUD en tiempo real, recuadros de seguimiento y **visualización de la matrícula leída** (`resultado_C0142_tracking.mp4`).
+  - Generación del archivo CSV estructurado con el esquema exacto de 15 columnas incluyendo la columna `texto_matricula` completada (`resultado_C0142_detecciones.csv`).
+  - **Comparativa empírica entre OCR Clásico (`EasyOCR`) y VLM (`SmolVLM-Instruct`)** sobre $N = 161$ matrículas verificadas de la base de datos de detección (completada con el texto Ground Truth donde faltaba), evaluando tasa de acierto y tiempos de inferencia.
 - **Tareas Extras (+1.75 puntos)**:
   - **Extra 1 (+0.25p)**: Determinación del **flujo direccional** de personas y vehículos (sentido izquierda a derecha, derecha a izquierda y salidas laterales).
   - **Extra 2 (+1.00p)**: Evaluación comparativa empírica entre **YOLO** y **RT-DETR** (arquitectura Transformer de Baidu con licencia Apache 2.0).
@@ -97,10 +97,6 @@ Se ha realizado una comparativa empírica ejecutando ambos modelos sobre la mism
 | **Parámetros** | ~2.6 M | ~20 M |
 | **Calidad de Detección** | Excelente en objetos principales | Excelente solidez en oclusiones y Transformers |
 
-### Conclusiones de la comparativa:
-- **YOLO11 Nano** ofrece una velocidad bruta superior (~3 veces más rápido), idóneo para sistemas embebidos de muy baja latencia.
-- **RT-DETR v2-S** opera a tiempo real holgado (>50 FPS) en GPU moderna y constituye la mejor opción técnica cuando los condicionantes legales o de negocio exigen una licencia permisiva **Apache 2.0**.
-
 ---
 
 ## 4. Detección Clásica de Matrículas por Contornos (Extra 3: +0.25p)
@@ -126,119 +122,134 @@ flowchart LR
 
 ---
 
-## 5. Detección y Seguimiento Persistente en Vídeo (`C0142.MP4`)
+## 5. Detección, Seguimiento Persistente y OCR en Vídeo (`C0142.MP4`)
 
-El sistema procesa la secuencia completa de evaluación `C0142.MP4` (**2.832 fotogramas, 113.28 segundos**) integrando todos los módulos en tiempo real:
+El sistema procesa la secuencia completa de evaluación `C0142.MP4` (**2.832 fotogramas, 113.28 segundos**) integrando detección, tracking y lectura OCR de matrículas en tiempo real:
 
-1. **Seguimiento con BoT-SORT y reidentificación**: las detecciones débiles pueden continuar un seguimiento y las de mayor confianza pueden iniciar uno nuevo. El seguimiento conserva los IDs perdidos hasta 100 fotogramas y usa la posición y la apariencia para asociar las reapariciones. El historial de posición se usa para medir el flujo y cada ID de vehículo se cuenta en su categoría más frecuente.
-   En la cámara fija de `C0142.MP4` se calibran siete posiciones de la fila aparcada cuya ocupación se conserva a lo largo del clip. Las cajas que coinciden con una posición comparten un ID de aparcamiento aunque BoT-SORT cambie su ID interno. Los recuadros parciales de la fila requieren una coincidencia con la plaza o continuidad fuera de ella para sumar otro vehículo.
-2. **Asociación Vehículo y Matrícula**: se asigna la placa al vehículo que mejor contiene su recuadro. Si el detector falla en la primera pasada, se vuelve a buscar en el recorte del vehículo y, cuando hay más resolución disponible, en el fotograma a mayor escala. Una detección de respaldo se registra cuando reaparece en una posición similar.
-3. **HUD Informativo en Vivo**: monitorización gráfica superior que refleja fotogramas, FPS, conteos de peatones, desglose de vehículos (coches, buses, camiones) y estadísticas de tráfico.
+1. **Seguimiento con BoT-SORT y reidentificación**: las detecciones débiles pueden continuar un seguimiento y las de mayor confianza pueden iniciar uno nuevo. En la cámara fija de `C0142.MP4` se calibran siete posiciones de la fila aparcada cuya ocupación se conserva a lo largo del clip (`parking_identity.py`).
+2. **Asociación Vehículo–Matrícula y Reconocimiento OCR Adaptativo (`PlateOCR`)**: se asigna la placa al vehículo que mejor contiene su recuadro. A medida que un vehículo se aproxima a cámara y su matrícula alcanza resolución legible ($\ge 36 \times 12\text{ px}$ sin recorte en los bordes), se ejecuta el motor OCR híbrido (`EasyOCR` + `SmolVLM-Instruct`) con post-procesado sintáctico de matrículas españolas (`NNNNLLL`), actualizando la etiqueta visual en pantalla (`Matricula #ID: TEXTO`) y el registro correspondiente en el CSV.
+3. **HUD Informativo en Vivo**: monitorización gráfica superior que refleja fotogramas, personas, desglose de vehículos, matrículas detectadas y leídas con OCR, y estadísticas de flujo direccional.
 
-![Resultado de Seguimiento y HUD](images/resultado_tracking_hud.jpg)
-*Captura de fotograma de C0142.MP4 mostrando la superposición del HUD superior, cajas delimitadoras con tracking y localización de matrículas.*
+![Resultado de Seguimiento, OCR y HUD](images/resultado_tracking_ocr_hud.jpg)
+*Captura del fotograma 2141 de `resultado_C0142_tracking.mp4` mostrando el HUD superior, el seguimiento del vehículo (`car #215 [1770JYG]`) y la lectura en vivo sobre el recuadro de la placa (`Matricula #215: 1770JYG`).*
 
 ### Resultados Globales sobre la Secuencia Completa:
-- **Modelo General de Detección**: **YOLO11 Medium (`yolo11m.pt`)** con inferencia a alta resolución (**`imgsz=1280`**), optimizado para resolución nativa 1080p sin pérdida de detalle en objetos pequeños ni lejanos.
+- **Modelo General de Detección**: **YOLO11 Medium (`yolo11m.pt`)** con inferencia a alta resolución (**`imgsz=1280`**).
 - **Fotogramas procesados**: 2.832 fotogramas (100% del vídeo).
-- **Total personas únicas detectadas**: 89 IDs.
-- **Total vehículos únicos detectados**: 105 IDs.
-  - Coches (`car`): 85
-  - Autobuses (`bus`): 4
-  - Camiones (`truck`): 7
-  - Motocicletas (`motorcycle`): 5
-  - Bicicletas (`bicycle`): 4
-- **Matrículas registradas**: 45, una por ID de vehículo.
+- **Total personas únicas detectadas**: 91 IDs.
+- **Total vehículos únicos detectados**: 107 IDs (`car`: 88, `truck`: 6, `motorcycle`: 6, `bicycle`: 4, `bus`: 3).
+- **Matrículas localizadas**: 50 (una por ID de vehículo).
+- **Matrículas visibles con texto reconocido por OCR**: **28 matrículas leídas** (el resto corresponde a vehículos lejanos al fondo con placas de $<22\text{ px}$).
 - **Flujo direccional de personas y vehículos en movimiento**:
-  - Sentido derecha a izquierda: 44 IDs.
-  - Sentido izquierda a derecha: 40 IDs.
-  - Salidas laterales por la derecha: 7.
-  - Salidas laterales por la izquierda: 4.
+  - Sentido derecha a izquierda: 45 IDs.
+  - Sentido izquierda a derecha: 39 IDs.
+  - Salidas laterales por la derecha: 7 | por la izquierda: 4.
 
 ---
 
 ## 6. Extras: Flujo Direccional y Anonimización
 
 ### Extra 1 (+0.25p): Flujo Direccional y Salidas Laterales
-- Se calcula el desplazamiento horizontal $\Delta x = x_t - x_{t-N}$ con el historial de cada `track_id`.
-- Los vehículos identificados en las plazas calibradas se excluyen del flujo y de las salidas laterales. Siguen figurando en el total de vehículos.
+- Se calcula el desplazamiento horizontal $\Delta x = x_t - x_{t-N}$ con el historial de cada `track_id`, excluyendo del flujo los vehículos estacionados en las plazas calibradas.
 
 ### Extra 4 (+0.25p): Anonimización de Privacidad
-- Modo conmutable de privacidad para el cumplimiento de normativas de protección de datos (RGPD).
-- Se aplica un desenfoque gaussiano adaptativo (`cv2.GaussianBlur`) sobre:
-  - La totalidad de personas y peatones detectados.
-  - Las placas de matrícula localizadas.
+- Modo conmutable de privacidad (`--anonymize`) mediante desenfoque gaussiano adaptativo (`cv2.GaussianBlur`) sobre la totalidad de personas y placas de matrícula localizadas.
 
 ![Fotograma Anonimizado](images/resultado_anonimizacion.jpg)
 *Visualización del modo de privacidad activo: anonimización mediante desenfoque gaussiano de personas y matrículas.*
 
 ---
 
-## 7. Archivo CSV Oficial de Resultados
+## 7. Archivo CSV Oficial de Resultados (con `texto_matricula`)
 
-El procesado genera el fichero CSV con las **15 columnas exactas** estipuladas en las directrices de entrega:
+El procesado genera el fichero `resultado_C0142_detecciones.csv` con las **15 columnas exactas** estipuladas en las directrices de entrega:
 
 ```csv
 fotograma,tipo_objeto,confianza,identificador_tracking,x1,y1,x2,y2,matrícula_en_su_caso,confianza,mx1,my1,mx2,my2,texto_matricula
 ```
 
-- **Total de registros generados**: **34.867 detecciones** a lo largo de los 2.832 fotogramas.
+- **Total de registros generados**: **35.353 detecciones** a lo largo de los 2.832 fotogramas.
 - **Para personas**: los campos de matrícula quedan vacíos / `None`.
-- **Para vehículos**: la primera matrícula localizada para cada ID de seguimiento se registra con `Si`, sus coordenadas `mx1, my1, mx2, my2` y la confianza del detector. Las demás filas del vehículo conservan el seguimiento y dejan vacíos los campos de matrícula.
-- En el vídeo, la etiqueta `Matricula #ID` usa el ID del vehículo. La caja acompaña al vehículo entre detecciones y se actualiza cuando el detector vuelve a localizar la placa.
+- **Para vehículos**: se registra con `Si` la detección de matrícula de cada `identificador_tracking`, sus coordenadas `mx1, my1, mx2, my2`, su confianza y el texto reconocido en `texto_matricula`.
 
 ```csv
 fotograma,tipo_objeto,confianza,identificador_tracking,x1,y1,x2,y2,matrícula_en_su_caso,confianza,mx1,my1,mx2,my2,texto_matricula
-1,bus,0.958,1,1402,52,1918,476,Si,0.412,1885,410,1919,427,
-1,car,0.866,2,1321,312,1398,371,Si,0.725,1355,336,1376,342,
-1,car,0.612,3,1231,313,1279,343,No,,,,,,
+1,bus,0.958,1,1395,52,1918,483,Si,0.64,1667,387,1718,401,322PCX
+425,car,0.858,42,979,309,1028,338,Si,0.712,543,478,658,510,3713LKC
+796,car,0.916,70,347,275,935,625,Si,0.613,430,503,563,540,3713LKC
+875,car,0.865,73,1065,311,1139,344,Si,0.699,205,568,375,618,0243MCG
+1125,car,0.751,77,1181,318,1216,343,Si,0.662,472,497,591,534,6713HCR
+1271,car,0.822,95,1150,311,1201,357,Si,0.702,358,521,489,564,2914FGN
+1330,car,0.829,109,1144,305,1197,355,Si,0.696,675,474,769,499,5766LSF
+1370,car,0.842,120,1177,306,1226,353,Si,0.703,1289,411,1348,428,0053JFW
+1467,car,0.871,141,1199,308,1253,355,Si,0.725,1885,596,1919,633,0285FKZ
+1677,car,0.819,155,1155,307,1206,352,Si,0.74,77,606,260,666,8536LKJ
+1940,car,0.824,215,1151,309,1199,347,Si,0.756,72,581,254,641,1770JYG
+2134,car,0.852,252,1123,312,1183,345,Si,0.648,324,495,446,535,8098JXM
+2392,car,0.812,268,1120,313,1181,345,Si,0.752,1860,727,1920,777,0965KBP
 ```
 
 ---
 
-## 8. Estructura de Ficheros y Entregables
+## 8. Práctica 4b: Comparativa Experimental entre OCR Clásico (`EasyOCR`) y VLM (`SmolVLM-Instruct`)
 
-```
-P4/
-├── VC_P4_Entrega_Grupo33.ipynb      # Cuaderno Jupyter principal con todas las salidas ejecutadas
-├── README.md                        # Memoria técnica completa de la práctica
-├── best_matriculas.pt               # Pesos entrenados del detector de matrículas YOLO11
-├── dataset_matriculas.yaml          # Configuración del dataset para YOLO
-├── prepare_dataset.py               # Script conversor de JSONs a formato YOLO (train/val/test)
-├── train_plates.py                  # Script de entrenamiento en GPU
-├── traffic_pipeline.py              # Núcleo modular del pipeline (tracking, contornos, HUD, flujo)
-├── botsort_trafico.yaml              # Ajustes de asociación e inicio de seguimientos
-├── parking_identity.py              # IDs de la fila aparcada en la escena fija C0142
-├── run_pipeline.py                  # Interfaz de línea de comandos para procesar secuencias
-├── load_rtdetr.py                   # Cargador oficial del modelo RT-DETR v2
-├── test_rtdetr_eval.py              # Benchmark comparativo de YOLO vs RT-DETR
-├── resultado_C0142_tracking.mp4     # Vídeo anotado completo (2.832 frames, 1080p, 1m 53s)
-├── resultado_C0142_detecciones.csv  # Archivo CSV oficial con las 15 columnas exigidas
-├── resultado_C0142_anonimizado.mp4  # Vídeo con modo de anonimización activo
-└── images/                          # Capturas y gráficas ilustrativas para la memoria
-```
+### 8.1 Especificaciones de la Máquina y Condiciones del Experimento
+
+Todas las pruebas comparativas de OCR se han ejecutado bajo condiciones idénticas en la siguiente estación de trabajo:
+- **CPU**: Intel® Core™ i7-14700KF (20 núcleos / 28 hilos)
+- **GPU**: **NVIDIA GeForce RTX 4070 SUPER** (12.0 GB VRAM GDDR6X, CUDA 12.6)
+- **RAM**: 32.0 GB DDR5 | **SO**: Windows 11 Pro 64-bit
+- **Software**: Python 3.13, PyTorch `2.9.1+cu126`, `easyocr 1.7.2`, `transformers 5.22.2` (`bfloat16`, `sdpa`).
+- **Dataset de Evaluación ($N = 161$ matrículas verificadas, `../P4b/ground_truth_matriculas.csv`)**: construido a partir de la base de datos de detección de matrículas de `dataset/`, combinando las 102 imágenes con matrícula en el nombre de archivo (verificadas visualmente) y completando manualmente el texto Ground Truth en 59 imágenes adicionales del split de `test` que carecían de etiqueta textual. Todos los recortes se pre-cargan en RAM y se mide la latencia pura de inferencia tras *warm-up* de GPU con `torch.cuda.synchronize()`.
+
+### 8.2 Resultados Cuantitativos ($N = 161$ matrículas)
+
+| Modelo / Configuración | Acierto Exacto Placa (%) | Acierto por Carácter ($1-\text{CER}$) | Similitud Media (%) | Distancia Levenshtein Media | Latencia Media (ms) | Latencia Mediana (ms) | Latencia P95 (ms) | Throughput (placas/s) | VRAM Pico (MB) |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **EasyOCR (Crudo)** | 49.07% | 64.10% | 82.82% | 2.522 | **27.19 ms** | **22.06 ms** | **63.38 ms** | **36.77 img/s** | **378.8 MB** |
+| **EasyOCR (+Post-proc. ES)** | 59.01% | 77.90% | 84.54% | 1.553 | **27.19 ms** | **22.06 ms** | **63.38 ms** | **36.77 img/s** | **378.8 MB** |
+| **SmolVLM-Instruct (Crudo)** | **89.44%** | 95.58% | 96.39% | 0.311 | 409.11 ms | 409.69 ms | 561.71 ms | 2.44 img/s | 4.882,5 MB |
+| **SmolVLM-Instruct (+Post-proc. ES)** | **89.44%** | **95.67%** | **96.48%** | **0.304** | 409.11 ms | 409.69 ms | 561.71 ms | 2.44 img/s | 4.882,5 MB |
+
+![Comparativa de Rendimiento y Tiempos OCR vs VLM](images/comparativa_ocr_rendimiento_tiempos.png)
+*Comparativa de tasa de acierto exacto y por carácter (izquierda) y tiempos de inferencia en GPU RTX 4070 SUPER (derecha).*
+
+![Análisis por Resolución y Errores de Edición](images/comparativa_ocr_resolucion_errores.png)
+*Desglose de tasa de acierto según resolución en píxeles de la matrícula (izquierda) y distribución de errores de edición Levenshtein (derecha).*
+
+![Ejemplos Visuales del Benchmark OCR vs VLM](images/ejemplos_comparativa_ocr.png)
+*Ejemplos visuales del benchmark mostrando casos de acierto conjunto y casos con inclinación (`3053GLD`), ruido de eurobanda (`5334LPR`) o desgaste tipográfico (`3050KGM`, `4691JTZ`) donde SmolVLM supera a EasyOCR.*
+
+### 8.3 Conclusiones de la Comparativa OCR vs VLM:
+1. **Velocidad y Ligereza vs. Exactitud**: **EasyOCR** es **$\sim 15\text{ veces más rápido}$** (**27.19 ms** vs **409.11 ms**) y requiere **$\sim 13\text{ veces menos VRAM}$** (**378.8 MB** vs **4.88 GB**), mientras que **SmolVLM-Instruct** logra una ventaja de **+30.43 puntos porcentuales en acierto exacto de matrícula completa** (**89.44%** frente a **59.01%**) y alcanza un **95.67% de precisión por carácter**.
+2. **Robustez ante Perspectiva y Baja Resolución**: en placas inclinadas (`3053GLD`), el detector de líneas de EasyOCR divide y desordena los bloques (`GLD3053`), y en placas pequeñas ($<220\text{ px}$) su acierto cae al **35.71%**, mientras que SmolVLM mantiene un **78.57%** en placas pequeñas y **>91%** en medianas y grandes.
+3. **Sinergia en Vídeo**: el uso combinado de seguimiento persistente (**BoT-SORT**) e inferencia OCR selectiva sobre los fotogramas de máxima resolución de cada `track_id` permite disfrutar de la precisión del VLM en vídeo sin comprometer la velocidad global del sistema.
 
 ---
 
-## 9. Instrucciones de Ejecución
+## 9. Estructura de Ficheros y Entregables
 
-### Requisitos y Entorno
-El sistema está optimizado para entornos con soporte CUDA:
-```bash
-pip install ultralytics lapx opencv-python pandas matplotlib
 ```
-
-### Ejecución del Pipeline en Línea de Comandos:
-```bash
-# Procesamiento del vídeo completo con seguimiento, conteo y matrículas
-python run_pipeline.py --video C0142.MP4
-
-# Procesamiento con modo de anonimización de privacidad activo
-python run_pipeline.py --video C0142.MP4 --anonymize
+VC/
+├── P4/
+│   ├── VC_P4_Entrega_Grupo33.ipynb      # Cuaderno Jupyter principal (Detección, Tracking y OCR)
+│   ├── README.md                        # Memoria técnica integrada (P4 + P4b)
+│   ├── best_matriculas.pt               # Pesos entrenados del detector de matrículas YOLO11
+│   ├── traffic_pipeline.py              # Núcleo modular (tracking, contornos, OCR híbrido, HUD, flujo)
+│   ├── run_pipeline.py                  # CLI para procesar secuencias con soporte --ocr
+│   ├── resultado_C0142_tracking.mp4     # Vídeo anotado completo con matrículas leídas en pantalla
+│   ├── resultado_C0142_detecciones.csv  # CSV oficial con las 15 columnas y texto_matricula completado
+│   └── images/                          # Figuras y gráficas de evaluación
+└── P4b/
+    ├── README.md                        # Memoria específica y comparativa detallada de Práctica 4b
+    ├── VC_P4b.ipynb                     # Cuaderno de demostración de OCRs, VLM y benchmark comparativo
+    ├── benchmark_ocr.py                 # Script reproducible del experimento EasyOCR vs SmolVLM
+    ├── ground_truth_matriculas.csv      # 161 matrículas verificadas con texto Ground Truth completado
+    ├── resultados_comparativa_ocr.csv   # Predicciones, métricas y latencias detalladas por imagen
+    ├── resumen_metricas_ocr.csv         # Tabla resumen de métricas del experimento
+    ├── resultado_C0142_detecciones.csv  # Copia del CSV oficial con texto_matricula completado
+    └── images/                          # Gráficas comparativas y capturas visuales de P4b
 ```
-
-### Ejecución del Cuaderno:
-Abrir y ejecutar secuencialmente el cuaderno `VC_P4_Entrega_Grupo33.ipynb` en JupyterLab, VS Code o PyCharm.
 
 ---
 Bajo licencia de Creative Commons Reconocimiento - No Comercial 4.0 Internacional.
