@@ -6,8 +6,7 @@ __pycache__/
 # Archivos pesados de datos y zips (>100 MB)
 *.zip
 C0142.MP4
-resultado_C0142_tracking.mp4
-resultado_C0142_anonimizado.mp4
+results/*.mp4
 annotations/
 dataset/
 runs/

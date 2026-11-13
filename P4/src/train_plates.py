@@ -9,10 +9,11 @@ def main():
     if torch.cuda.is_available():
         print(f"GPU: {torch.cuda.get_device_name(0)}")
 
-    yaml_path = os.path.abspath("dataset_matriculas.yaml")
+    p4_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    yaml_path = os.path.join(p4_root, "dataset_matriculas.yaml")
     
     # Cargar modelo base YOLO11 Nano preentrenado
-    model = YOLO("yolo11n.pt")
+    model = YOLO(os.path.join(p4_root, "yolo11n.pt"))
     
     # Lanzar entrenamiento
     results = model.train(

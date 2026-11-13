@@ -1,9 +1,14 @@
 import os, sys, subprocess, urllib.request
 
-REPO = "RT-DETR/rtdetrv2_pytorch"
+P4_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+REPO = os.path.join(P4_ROOT, "RT-DETR", "rtdetrv2_pytorch")
 repo_abs = os.path.abspath(REPO)
 if repo_abs not in sys.path:
     sys.path.insert(0, repo_abs)
+if "src" in sys.modules:
+    mod_file = getattr(sys.modules["src"], "__file__", None) or ""
+    if repo_abs.replace("\\", "/").lower() not in mod_file.replace("\\", "/").lower():
+        sys.modules.pop("src", None)
 
 import cv2
 import numpy as np
@@ -54,10 +59,10 @@ def load_rtdetr(family="v2", size="s", device=DEVICE):
     
     cfg_name, tag, wfile = MODELS[family][size]
 
-    WEIGHTS = f"weights/{wfile}"
+    WEIGHTS = os.path.join(P4_ROOT, "weights", wfile)
     if not os.path.exists(WEIGHTS):
         print(f'No se detectaron los pesos del modelo {family}/{size}. Se estan descargando y guardando en {WEIGHTS}')
-        os.makedirs("weights", exist_ok=True)
+        os.makedirs(os.path.join(P4_ROOT, "weights"), exist_ok=True)
         urllib.request.urlretrieve(
             f"https://github.com/lyuwenyu/storage/releases/download/{tag}/{wfile}", WEIGHTS)
 

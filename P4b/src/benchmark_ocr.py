@@ -17,11 +17,13 @@ plt.rcParams["figure.dpi"] = 150
 plt.rcParams["savefig.dpi"] = 200
 plt.rcParams["font.sans-serif"] = "DejaVu Sans"
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+RESULTS_DIR = os.path.join(BASE_DIR, "results")
 P4_DIR = os.path.abspath(os.path.join(BASE_DIR, "..", "P4"))
 DATASET_DIR = os.path.join(P4_DIR, "dataset")
 IMAGES_OUT_P4B = os.path.join(BASE_DIR, "images")
 IMAGES_OUT_P4 = os.path.join(P4_DIR, "images")
+os.makedirs(RESULTS_DIR, exist_ok=True)
 os.makedirs(IMAGES_OUT_P4B, exist_ok=True)
 os.makedirs(IMAGES_OUT_P4, exist_ok=True)
 
@@ -366,7 +368,7 @@ def run_benchmark():
         df_res[f"{prefix}_lev"] = dist_list
         df_res[f"{prefix}_sim"] = np.round([s * 100.0 for s in sim_list], 2)
 
-    res_csv_path = os.path.join(BASE_DIR, "resultados_comparativa_ocr.csv")
+    res_csv_path = os.path.join(RESULTS_DIR, "resultados_comparativa_ocr.csv")
     df_res.to_csv(res_csv_path, index=False, encoding="utf-8")
 
     # 4. Resumen global de métricas
@@ -402,7 +404,7 @@ def run_benchmark():
         })
     df_summary = pd.DataFrame(summary_rows)
     print(df_summary.to_string(index=False))
-    df_summary.to_csv(os.path.join(BASE_DIR, "resumen_metricas_ocr.csv"), index=False, encoding="utf-8")
+    df_summary.to_csv(os.path.join(RESULTS_DIR, "resumen_metricas_ocr.csv"), index=False, encoding="utf-8")
 
     # 5. Generar gráficas comparativas
     generate_plots(df_res, df_summary)

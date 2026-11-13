@@ -5,7 +5,7 @@ import random
 import shutil
 
 # Configuración
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 IMAGES_DIR = os.path.join(BASE_DIR, "images")
 ANNOTATIONS_DIR = os.path.join(BASE_DIR, "annotations")
 DATASET_DIR = os.path.join(BASE_DIR, "dataset")

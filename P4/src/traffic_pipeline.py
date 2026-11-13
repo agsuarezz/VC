@@ -9,7 +9,10 @@ from PIL import Image
 from collections import Counter, defaultdict, deque
 from pathlib import Path
 from ultralytics import YOLO
-from parking_identity import ParkingIdentity, parking_boxes
+try:
+    from parking_identity import ParkingIdentity, parking_boxes
+except ImportError:
+    from src.parking_identity import ParkingIdentity, parking_boxes
 
 COCO_VEHICLE_CLASSES = {
     1: "bicycle",
@@ -19,7 +22,13 @@ COCO_VEHICLE_CLASSES = {
     7: "truck"
 }
 COCO_PERSON_CLASS = 0
-TRAFFIC_TRACKER = str(Path(__file__).with_name("botsort_trafico.yaml"))
+_HERE = Path(__file__).resolve().parent
+_P4_ROOT = _HERE.parent
+TRAFFIC_TRACKER = str(
+    (_P4_ROOT / "botsort_trafico.yaml")
+    if (_P4_ROOT / "botsort_trafico.yaml").exists()
+    else (_HERE / "botsort_trafico.yaml")
+)
 PLATE_REFRESH_INTERVAL = 5
 
 
@@ -1066,6 +1075,9 @@ class TrafficAnalyzer:
 
         writer = None
         if output_video_path:
+            out_v_dir = os.path.dirname(os.path.abspath(output_video_path))
+            if out_v_dir:
+                os.makedirs(out_v_dir, exist_ok=True)
             fourcc = cv2.VideoWriter_fourcc(*"mp4v")
             writer = cv2.VideoWriter(output_video_path, fourcc, fps, (width, height))
 
@@ -1172,6 +1184,9 @@ class TrafficAnalyzer:
 
         df = pd.DataFrame(state["csv_records"])
         if output_csv_path:
+            out_c_dir = os.path.dirname(os.path.abspath(output_csv_path))
+            if out_c_dir:
+                os.makedirs(out_c_dir, exist_ok=True)
             column_names = [
                 "fotograma", "tipo_objeto", "confianza", "identificador_tracking",
                 "x1", "y1", "x2", "y2", "matrícula_en_su_caso", "confianza",

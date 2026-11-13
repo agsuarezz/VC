@@ -87,7 +87,7 @@ pip install transformers accelerate
 ## 4.4 Entrega
 
 La segunda entrega de la práctica 4 aborda las dos tareas exigidas:
-1. **Completar la tarea de detección y seguimiento en vídeo (`C0142.MP4`)** con la adquisición del texto de cada matrícula visible detectada, incluyendo su visualización en el vídeo de test (`resultado_C0142_tracking.mp4`) y su volcado en la columna `texto_matricula` del archivo CSV oficial (`resultado_C0142_detecciones.csv`).
+1. **Completar la tarea de detección y seguimiento en vídeo (`C0142.MP4`)** con la adquisición del texto de cada matrícula visible detectada, incluyendo su visualización en el vídeo de test (`../P4/results/resultado_C0142_tracking.mp4`) y su volcado en la columna `texto_matricula` del archivo CSV oficial (`results/resultado_C0142_detecciones.csv`).
 2. **Realizar una comparativa experimental rigurosa entre un OCR clásico (`EasyOCR`) y un VLM (`SmolVLM-Instruct`)** en términos de tiempo de inferencia y tasa de acierto sobre la base de datos de detección de matrículas, completándola con el texto Ground Truth en las muestras donde faltaba.
 
 ---
@@ -183,17 +183,17 @@ Para una evaluación cuantitativa completa se han calculado cuatro métricas de 
 
 ## 4.8 Integración del Reconocimiento OCR en Vídeo (`C0142.MP4`) y Volcado al CSV
 
-Para completar el sistema de vigilancia de tráfico de la Práctica 4 (`../P4/traffic_pipeline.py` y `../P4/run_pipeline.py`), se ha integrado la clase `PlateOCR` con estrategia **híbrida adaptativa (`--ocr hybrid`)** junto al filtro de vehículos en movimiento (`VehicleMotionFilter`):
+Para completar el sistema de vigilancia de tráfico de la Práctica 4 (`../P4/src/traffic_pipeline.py` y `../P4/src/run_pipeline.py`), se ha integrado la clase `PlateOCR` con estrategia **híbrida adaptativa (`--ocr hybrid`)** junto al filtro de vehículos en movimiento (`VehicleMotionFilter`):
 
 1. **Filtrado de vehículos estacionados (`VehicleMotionFilter`) y selección del mejor recorte por `track_id`**: mediante sustracción de fondo MOG2 y desplazamiento en ventana *lookahead* (`motion_min_span=30 px`, `lookahead=30` fotogramas), se descartan los vehículos aparcados (50 trayectorias filtradas), centrando la detección y el OCR en los vehículos en circulación. Cuando un vehículo entra en escena y su placa resulta visible sin recorte en los bordes, se activa `PlateOCR`.
 2. **Cascada Híbrida + Consenso Multiframe + Validación Española**: `PlateOCR` evalúa inicialmente con el lector ligero **`fast-plate-ocr` (`cct-s-v2-global-model`)**, complementado con **`EasyOCR`** (con ordenación por filas para placas de dos líneas) y recurriendo a **`SmolVLM-Instruct`** en recortes ambiguos. A lo largo de los fotogramas del `track_id`, un sistema de votación por calidad sintáctica acumula consenso antes de fijar la matrícula definitiva (`NNNNLLL` o provincial `LLNNNNLL`).
-3. **Visualización en Vivo en el Vídeo (`resultado_C0142_tracking.mp4`)**: el texto reconocido se muestra tanto en la etiqueta del vehículo (`car #215 (0.92) [1770JYG]`) como sobre el recuadro amarillo de la placa (`Matricula #215: 1770JYG`), actualizando también el contador `OCR` del HUD superior.
-4. **Volcado Estandarizado al CSV (`resultado_C0142_detecciones.csv`)**: se completa la decimoquinta columna `texto_matricula` para cada vehículo cuya matrícula resulta visible a lo largo de su trayectoria.
+3. **Visualización en Vivo en el Vídeo (`../P4/results/resultado_C0142_tracking.mp4`)**: el texto reconocido se muestra tanto en la etiqueta del vehículo (`car #215 (0.92) [1770JYG]`) como sobre el recuadro amarillo de la placa (`Matricula #215: 1770JYG`), actualizando también el contador `OCR` del HUD superior.
+4. **Volcado Estandarizado al CSV (`results/resultado_C0142_detecciones.csv`)**: se completa la decimoquinta columna `texto_matricula` para cada vehículo cuya matrícula resulta visible a lo largo de su trayectoria.
 
 ![Visualización del Vídeo con OCR Activo](images/resultado_tracking_ocr_hud.jpg)
-*Figura 4. Fotograma 2141 de `resultado_C0142_tracking.mp4` mostrando la lectura en vivo `Matricula #215: 1770JYG` sobre la caja delimitadora de la matrícula y en el identificador del vehículo, junto con el HUD actualizado (sin vehículos aparcados).*
+*Figura 4. Fotograma 2141 de `../P4/results/resultado_C0142_tracking.mp4` mostrando la lectura en vivo `Matricula #215: 1770JYG` sobre la caja delimitadora de la matrícula y en el identificador del vehículo, junto con el HUD actualizado (sin vehículos aparcados).*
 
-### Extracto de Matrículas Reconocidas en `resultado_C0142_detecciones.csv`
+### Extracto de Matrículas Reconocidas en `results/resultado_C0142_detecciones.csv`
 
 De las **38 matrículas localizadas** sobre los 57 vehículos en movimiento detectados en `C0142.MP4` (2.832 fotogramas, `18.794` registros totales en CSV), **30 obtienen su texto reconocido mediante OCR** (`29` textos únicos en la columna `texto_matricula`, correspondiendo las 8 restantes a motocicletas o vehículos muy lejanos):
 
