@@ -30,6 +30,8 @@ TRAFFIC_TRACKER = str(
     else (_HERE / "botsort_trafico.yaml")
 )
 PLATE_REFRESH_INTERVAL = 5
+# Línea transversal de C0142 a 1920 x 1080: altura, borde izquierdo, división y borde derecho.
+C0142_CAR_COUNT_LINE = (440, 700, 1430, 1700)
 
 
 SPANISH_CONSONANTS = "BCDFGHJKLMNPRSTVWXYZ"
@@ -716,26 +718,44 @@ class TrafficAnalyzer:
                 yield track_id, *best
 
     @staticmethod
-    def _update_directional_flow(state, cx, y2, track_id, width):
-        """Actualiza trayectoria corta y métricas de flujo direccional por ID."""
-        trail = state["track_history"][track_id]
-        trail.append((cx, y2))
-        if len(trail) > 30:
-            trail.pop(0)
-        if len(trail) >= 8:
-            dx = trail[-1][0] - trail[0][0]
-            if dx > 35:
-                state["flow_left_to_right"].add(track_id)
-            elif dx < -35:
-                state["flow_right_to_left"].add(track_id)
+    def _update_car_flow(state, track_id, cx, y2):
+        """Cuenta el primer cruce válido de cada coche en su sentido de circulación."""
+        if state["car_count_line"] is None or track_id in state["counted_cars"]:
+            return
 
-        if track_id not in state["exited_ids"] and len(trail) >= 5:
-            if cx > width - 60 and trail[-1][0] > trail[-3][0]:
-                state["exits_right"] += 1
-                state["exited_ids"].add(track_id)
-            elif cx < 60 and trail[-1][0] < trail[-3][0]:
-                state["exits_left"] += 1
-                state["exited_ids"].add(track_id)
+        previous = state["car_positions"].get(track_id)
+        state["car_positions"][track_id] = (cx, y2)
+        if previous is None:
+            return
+
+        previous_x, previous_y = previous
+        line_y, left_x, split_x, right_x = state["car_count_line"]
+        towards_camera = previous_y < line_y <= y2
+        away_from_camera = y2 < line_y <= previous_y
+        if not (towards_camera or away_from_camera):
+            return
+
+        # Interpola la posición horizontal justo en el cruce.
+        crossing_x = previous_x + (cx - previous_x) * (line_y - previous_y) / (y2 - previous_y)
+        if towards_camera and left_x <= crossing_x < split_x:
+            state["cars_towards_camera"] += 1
+        elif away_from_camera and split_x <= crossing_x <= right_x:
+            state["cars_away_from_camera"] += 1
+        else:
+            return
+
+        state["counted_cars"].add(track_id)
+        del state["car_positions"][track_id]
+
+    @staticmethod
+    def _car_flow_leader(state):
+        towards = state["cars_towards_camera"]
+        away = state["cars_away_from_camera"]
+        if towards > away:
+            return "Hacia la camara"
+        if away > towards:
+            return "Hacia el fondo"
+        return "Empate" if towards else "Sin cruces"
 
     def _recognize_frame_plates(
         self, state, frame, current_vehicles, width, height,
@@ -902,9 +922,9 @@ class TrafficAnalyzer:
                 rec_idx = first_plate_record_idx[v_id]
                 csv_records[rec_idx]["texto_matricula"] = vehicle_plate_texts[v_id]
 
-    @staticmethod
+    @classmethod
     def _annotate_frame(
-        state, annotated_frame, current_persons, current_vehicles, plates_in_frame,
+        cls, state, annotated_frame, current_persons, current_vehicles, plates_in_frame,
         frame_idx, total_frames, width, anonymize
     ):
         """Dibuja cajas de personas, vehículos, matrículas proyectadas y HUD superior."""
@@ -968,11 +988,21 @@ class TrafficAnalyzer:
         veh_desglose = " | ".join(f"{kind.capitalize()}s: {count}" for kind, count in vehicle_breakdown.items())
         line2 = (
             f"Desglose: {veh_desglose if veh_desglose else 'None'} | Matriculas: {total_plates} "
-            f"(OCR: {len(vehicle_plate_texts)}) | Flujo Dir: [Der->Izq: {len(state['flow_right_to_left'])}, "
-            f"Izq->Der: {len(state['flow_left_to_right'])}]"
+            f"(OCR: {len(vehicle_plate_texts)})"
         )
-        cv2.putText(annotated_frame, line1, (15, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.58, (255, 255, 255), 2, cv2.LINE_AA)
-        cv2.putText(annotated_frame, line2, (15, 58), cv2.FONT_HERSHEY_SIMPLEX, 0.52, (0, 220, 255), 1, cv2.LINE_AA)
+        cv2.putText(annotated_frame, line1, (15, 21), cv2.FONT_HERSHEY_SIMPLEX, 0.58, (255, 255, 255), 2, cv2.LINE_AA)
+        cv2.putText(annotated_frame, line2, (15, 44), cv2.FONT_HERSHEY_SIMPLEX, 0.52, (0, 220, 255), 1, cv2.LINE_AA)
+
+        if state["car_count_line"] is not None:
+            line_y, left_x, split_x, right_x = state["car_count_line"]
+            cv2.line(annotated_frame, (left_x, line_y), (split_x, line_y), (90, 240, 120), 2, cv2.LINE_AA)
+            cv2.line(annotated_frame, (split_x, line_y), (right_x, line_y), (255, 200, 90), 2, cv2.LINE_AA)
+            line3 = (
+                f"Coches hacia la camara: {state['cars_towards_camera']} | "
+                f"Hacia el fondo: {state['cars_away_from_camera']} | "
+                f"Mas trafico: {cls._car_flow_leader(state)}"
+            )
+            cv2.putText(annotated_frame, line3, (15, 66), cv2.FONT_HERSHEY_SIMPLEX, 0.52, (255, 255, 255), 1, cv2.LINE_AA)
 
     def _emit_buffered_frame(
         self, state, buffered_item, motion_filter, parking, width, height,
@@ -989,8 +1019,6 @@ class TrafficAnalyzer:
             current_persons.append((x1, y1, x2, y2, track_id, conf, cname))
             if anonymize:
                 boxes_to_blur.append((x1, y1, x2, y2))
-            if not (parking and parking.is_parked(track_id)):
-                self._update_directional_flow(state, (x1 + x2) // 2, y2, track_id, width)
 
         current_vehicles = []
         for (x1, y1, x2, y2, track_id, conf, raw_cname) in raw_vehicles:
@@ -1001,8 +1029,8 @@ class TrafficAnalyzer:
             cname = votes.most_common(1)[0][0]
             state["vehicle_classes"][track_id] = cname
             current_vehicles.append((x1, y1, x2, y2, track_id, conf, cname))
-            if not (parking and parking.is_parked(track_id)):
-                self._update_directional_flow(state, (x1 + x2) // 2, y2, track_id, width)
+            if cname == "car" and not (parking and parking.is_parked(track_id)):
+                self._update_car_flow(state, track_id, (x1 + x2) / 2, y2)
 
         plates_in_frame = self._recognize_frame_plates(
             state, frame, current_vehicles, width, height,
@@ -1085,8 +1113,17 @@ class TrafficAnalyzer:
         effective_lookahead = max(0, int(lookahead_frames)) if motion_filter is not None else 0
         pending_frames = deque()
 
+        car_count_line = None
+        if Path(video_path).stem.casefold() == "c0142":
+            line_y, left_x, split_x, right_x = C0142_CAR_COUNT_LINE
+            car_count_line = (
+                round(line_y * height / 1080),
+                round(left_x * width / 1920),
+                round(split_x * width / 1920),
+                round(right_x * width / 1920),
+            )
+
         state = {
-            "track_history": defaultdict(list),
             "unique_persons": set(),
             "vehicle_class_votes": defaultdict(Counter),
             "vehicle_classes": {},
@@ -1101,11 +1138,11 @@ class TrafficAnalyzer:
             "vehicle_last_ocr_frame": {},
             "vehicle_vlm_attempts": defaultdict(int),
             "vehicle_best_plate_w": defaultdict(int),
-            "flow_left_to_right": set(),
-            "flow_right_to_left": set(),
-            "exits_left": 0,
-            "exits_right": 0,
-            "exited_ids": set(),
+            "car_count_line": car_count_line,
+            "car_positions": {},
+            "counted_cars": set(),
+            "cars_towards_camera": 0,
+            "cars_away_from_camera": 0,
             "csv_records": [],
             "first_plate_record_idx": {},
             "emitted_frames": 0,
@@ -1209,10 +1246,12 @@ class TrafficAnalyzer:
             print(f"Trayectorias estacionarias/aparcadas filtradas: {filtered_static}")
         for kind, count in vehicle_breakdown.items():
             print(f"  - {kind}: {count}")
-        print(f"Flujo izquierda a derecha: {len(state['flow_left_to_right'])}")
-        print(f"Flujo derecha a izquierda: {len(state['flow_right_to_left'])}")
-        print(f"Vehículos que salieron por la derecha: {state['exits_right']}")
-        print(f"Vehículos que salieron por la izquierda: {state['exits_left']}")
+        flow_leader = None
+        if car_count_line is not None:
+            flow_leader = self._car_flow_leader(state)
+            print(f"Coches hacia la cámara: {state['cars_towards_camera']}")
+            print(f"Coches hacia el fondo: {state['cars_away_from_camera']}")
+            print(f"Sentido con más tráfico: {flow_leader}")
         print(f"Total matrículas registradas: {len(unique_vehicles_with_plate)}")
         print(f"Matrículas visibles con texto reconocido por OCR: {len(vehicle_plate_texts)}")
         if vehicle_plate_texts:
@@ -1231,9 +1270,8 @@ class TrafficAnalyzer:
             "recognized_plates_count": len(vehicle_plate_texts),
             "recognized_plates": dict(vehicle_plate_texts),
             "vehicle_breakdown": dict(vehicle_breakdown),
-            "flow_l2r": len(state["flow_left_to_right"]),
-            "flow_r2l": len(state["flow_right_to_left"]),
-            "exits_right": state["exits_right"],
-            "exits_left": state["exits_left"],
+            "cars_towards_camera": state["cars_towards_camera"] if car_count_line is not None else None,
+            "cars_away_from_camera": state["cars_away_from_camera"] if car_count_line is not None else None,
+            "car_flow_leader": flow_leader,
             "total_plates": len(unique_vehicles_with_plate)
         }

@@ -24,12 +24,18 @@ El trabajo aborda el **100% de los requisitos obligatorios** de ambas entregas (
   - Generación del archivo CSV estructurado con el esquema exacto de 15 columnas incluyendo la columna `texto_matricula` completada (`results/resultado_C0142_detecciones.csv`).
   - **Comparativa empírica entre OCR Clásico (`EasyOCR`) y VLM (`SmolVLM-Instruct`)** sobre $N = 161$ matrículas verificadas de la base de datos de detección (completada con el texto Ground Truth donde faltaba), evaluando tasa de acierto y tiempos de inferencia.
 - **Tareas Extras (+1.75 puntos)**:
-  - **Extra 1 (+0.25p)**: Determinación del **flujo direccional** de personas y vehículos (sentido izquierda a derecha, derecha a izquierda y salidas laterales).
+  - **Extra 1 (+0.25p)**: Conteo del **flujo de coches hacia la cámara y hacia el fondo** en `C0142`.
   - **Extra 2 (+1.00p)**: Evaluación comparativa empírica entre **YOLO** y **RT-DETR** (arquitectura Transformer de Baidu con licencia Apache 2.0).
   - **Extra 3 (+0.25p)**: Detección de matrículas mediante **técnicas clásicas basadas en morfología matemática y contornos** en OpenCV.
   - **Extra 4 (+0.25p)**: Módulo conmutable de **anonimización de privacidad** (desenfoque gaussiano de personas y matrículas).
 
 ---
+
+## Descarga y preparación
+
+Para ejecutar el proyecto completo, descarga las carpetas **`P4`** y **`P4b`** y colócalas al mismo nivel, dentro de una misma carpeta. `P4b` utiliza archivos de `../P4`, así que conserva los nombres y la estructura de ambas carpetas.
+
+En GitHub puedes descargar el repositorio desde **Code → Download ZIP** y descomprimirlo para conservar esa estructura. Para ejecutar el análisis de tráfico, coloca también el vídeo `C0142.MP4` dentro de `P4`.
 
 ## 1. Dataset de Matrículas y Preparación
 
@@ -131,7 +137,7 @@ El sistema procesa la secuencia completa de evaluación `C0142.MP4` (**2.832 fot
 3. **HUD Informativo en Vivo**: monitorización gráfica superior que refleja fotogramas, personas, desglose de vehículos en movimiento, matrículas detectadas y leídas con OCR, y estadísticas de flujo direccional.
 
 ![Resultado de Seguimiento, OCR y HUD](images/resultado_tracking_ocr_hud.jpg)
-*Captura del fotograma 2141 de `results/resultado_C0142_tracking.mp4` mostrando el HUD superior (con vehículos aparcados filtrados), el seguimiento de `car #215 [1770JYG]` y la lectura en vivo sobre el recuadro de la placa (`Matricula #215: 1770JYG`).*
+*Captura de una ejecución anterior al cambio del contador de flujo. Muestra el seguimiento y la lectura de la matrícula en el fotograma 2141.*
 
 ### Resultados Globales sobre la Secuencia Completa:
 - **Modelo General de Detección**: **YOLO11 Medium (`yolo11m.pt`)** con inferencia a alta resolución (**`imgsz=1280`**).
@@ -140,17 +146,19 @@ El sistema procesa la secuencia completa de evaluación `C0142.MP4` (**2.832 fot
 - **Total vehículos únicos detectados (en movimiento)**: **57 IDs** (`car`: 48, `motorcycle`: 4, `bicycle`: 3, `bus`: 2), tras filtrar **50 trayectorias estacionarias/aparcadas**.
 - **Matrículas localizadas**: **38** (una por ID de vehículo en movimiento).
 - **Matrículas visibles con texto reconocido por OCR**: **30 matrículas leídas** (`29` textos únicos; las 8 restantes corresponden a motocicletas o placas muy lejanas).
-- **Flujo direccional de personas y vehículos en movimiento**:
-  - Sentido derecha a izquierda: 44 IDs.
-  - Sentido izquierda a derecha: 39 IDs.
-  - Salidas laterales por la derecha: 7 | por la izquierda: 4.
+- **Flujo de coches**, calculado sobre las trayectorias guardadas en `results/resultado_C0142_detecciones.csv`:
+  - Hacia la cámara por los carriles de la izquierda: **16**.
+  - Hacia el fondo por los carriles de la derecha: **11**.
+  - Sentido con más tráfico: **hacia la cámara**.
 
 ---
 
 ## 6. Extras: Flujo Direccional y Anonimización
 
-### Extra 1 (+0.25p): Flujo Direccional y Salidas Laterales
-- Se calcula el desplazamiento horizontal $\Delta x = x_t - x_{t-N}$ con el historial de cada `track_id`, excluyendo vehículos estacionados mediante `VehicleMotionFilter` y `src/parking_identity.py`.
+### Extra 1 (+0.25p): Flujo de coches por sentido
+
+- Se sigue el centro inferior de cada caja de coche. Cada `track_id` suma una vez al cruzar la línea transversal dibujada sobre la calzada: hacia abajo por el tramo izquierdo (hacia la cámara) o hacia arriba por el tramo derecho (hacia el fondo).
+- El HUD y el resumen final muestran ambos contadores y el sentido con más tráfico. La posición de la línea está calibrada para la cámara fija de `C0142`.
 
 ### Extra 4 (+0.25p): Anonimización de Privacidad
 - Modo conmutable de privacidad (`--anonymize`) mediante desenfoque gaussiano adaptativo (`cv2.GaussianBlur`) sobre la totalidad de personas y placas de matrícula localizadas.
