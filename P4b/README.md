@@ -187,11 +187,11 @@ Para completar el sistema de vigilancia de tráfico de la Práctica 4 (`../P4/sr
 
 1. **Filtrado de vehículos estacionados (`VehicleMotionFilter`) y selección del mejor recorte por `track_id`**: mediante sustracción de fondo MOG2 y desplazamiento en ventana *lookahead* (`motion_min_span=30 px`, `lookahead=30` fotogramas), se descartan los vehículos aparcados (50 trayectorias filtradas), centrando la detección y el OCR en los vehículos en circulación. Cuando un vehículo entra en escena y su placa resulta visible sin recorte en los bordes, se activa `PlateOCR`.
 2. **Cascada Híbrida + Consenso Multiframe + Validación Española**: `PlateOCR` evalúa inicialmente con el lector ligero **`fast-plate-ocr` (`cct-s-v2-global-model`)**, complementado con **`EasyOCR`** (con ordenación por filas para placas de dos líneas) y recurriendo a **`SmolVLM-Instruct`** en recortes ambiguos. A lo largo de los fotogramas del `track_id`, un sistema de votación por calidad sintáctica acumula consenso antes de fijar la matrícula definitiva (`NNNNLLL` o provincial `LLNNNNLL`).
-3. **Visualización en Vivo en el Vídeo (`../P4/results/resultado_C0142_tracking.mp4`)**: el texto reconocido se muestra tanto en la etiqueta del vehículo (`car #215 (0.92) [1770JYG]`) como sobre el recuadro amarillo de la placa (`Matricula #215: 1770JYG`), actualizando también el contador `OCR` del HUD superior.
+3. **Visualización en Vivo en el Vídeo (`../P4/results/resultado_C0142_tracking.mp4`)**: el texto reconocido se muestra tanto en la etiqueta del vehículo como sobre el recuadro amarillo de la placa. El HUD muestra el total de matrículas leídas y el recuento de coches por sentido.
 4. **Volcado Estandarizado al CSV (`results/resultado_C0142_detecciones.csv`)**: se completa la decimoquinta columna `texto_matricula` para cada vehículo cuya matrícula resulta visible a lo largo de su trayectoria.
 
 ![Visualización del Vídeo con OCR Activo](images/resultado_tracking_ocr_hud.jpg)
-*Figura 4. Fotograma 2141 de `../P4/results/resultado_C0142_tracking.mp4` mostrando la lectura en vivo `Matricula #215: 1770JYG` sobre la caja delimitadora de la matrícula y en el identificador del vehículo, junto con el HUD actualizado (sin vehículos aparcados).*
+*Figura 4. Fotograma 2141 con lectura de matrícula, línea de conteo y recuento de coches hacia la cámara y hacia el fondo.*
 
 ### Extracto de Matrículas Reconocidas en `results/resultado_C0142_detecciones.csv`
 

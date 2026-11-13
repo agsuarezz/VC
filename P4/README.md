@@ -43,7 +43,7 @@ Para entrenar el detector de matrículas se ha dispuesto de un conjunto de datos
 - **2.386 imágenes válidas** y sus correspondientes archivos JSON en `annotations/`.
 - Más de **5.200 matrículas etiquetadas** con coordenadas normalizadas `[x_center, y_center, width, height]` y valor textual (`plate`).
 
-A través del módulo `src/prepare_dataset.py`, las anotaciones se convirtieron al formato estándar de YOLO (`.txt` con clase `0`), dividiendo de forma estratificada y reproducible (`seed=42`) el dataset:
+A través del módulo `src/prepare_dataset.py`, las anotaciones se convirtieron al formato estándar de YOLO (`.txt` con clase `0`). Se barajaron las muestras con una semilla fija (`seed=42`) antes de dividir el dataset.
 - **Entrenamiento (Train, 80%)**: 1.908 imágenes.
 - **Validación (Val, 10%)**: 238 imágenes.
 - **Prueba (Test, 10%)**: 240 imágenes.
@@ -64,6 +64,15 @@ names: ['matricula']
 ## 2. Entrenamiento y Evaluación del Detector de Matrículas (YOLO11)
 
 Tomando como punto de partida el modelo preentrenado `yolo11n.pt` de Ultralytics, se ejecutó un entrenamiento de fine-tuning sobre nuestra GPU **NVIDIA GeForce RTX 4070 SUPER (12 GB VRAM)** durante 20 épocas con tamaño de imagen de 640 y batch de 16.
+
+Para repetir el entrenamiento, ten instaladas las dependencias del notebook. Coloca las imágenes originales en `P4/images/` y sus JSON en `P4/annotations/`, con el mismo nombre base en cada par. Desde `P4`, ejecuta en este orden:
+
+```bash
+python src/prepare_dataset.py
+python src/train_plates.py
+```
+
+El primer script crea los conjuntos de entrenamiento, validación y prueba bajo `dataset/` y escribe `dataset_matriculas.yaml`. El segundo ajusta YOLO11 Nano con esa configuración y guarda el mejor checkpoint de validación en `weights/best.pt` dentro de la carpeta de la ejecución `yolo11n_matriculas` que indica Ultralytics. Para usar unos pesos recién entrenados, copia ese archivo a `P4/best_matriculas.pt`. Si solo quieres ejecutar el notebook, puedes usar los pesos incluidos en la entrega.
 
 ### Métricas de Rendimiento Obtenidas:
 
@@ -137,19 +146,22 @@ El sistema procesa la secuencia completa de evaluación `C0142.MP4` (**2.832 fot
 3. **HUD Informativo en Vivo**: monitorización gráfica superior que refleja fotogramas, personas, desglose de vehículos en movimiento, matrículas detectadas y leídas con OCR, y estadísticas de flujo direccional.
 
 ![Resultado de Seguimiento, OCR y HUD](images/resultado_tracking_ocr_hud.jpg)
-*Captura de una ejecución anterior al cambio del contador de flujo. Muestra el seguimiento y la lectura de la matrícula en el fotograma 2141.*
+*Fotograma 2141 del vídeo procesado. El HUD muestra 14 coches hacia la cámara y 6 hacia el fondo, junto con la línea de conteo y la lectura de matrículas.*
 
-### Resultados Globales sobre la Secuencia Completa:
+### Resultados de la ejecución mostrada
 - **Modelo General de Detección**: **YOLO11 Medium (`yolo11m.pt`)** con inferencia a alta resolución (**`imgsz=1280`**).
 - **Fotogramas procesados**: 2.832 fotogramas (100% del vídeo).
-- **Total personas únicas detectadas**: 91 IDs.
-- **Total vehículos únicos detectados (en movimiento)**: **57 IDs** (`car`: 48, `motorcycle`: 4, `bicycle`: 3, `bus`: 2), tras filtrar **50 trayectorias estacionarias/aparcadas**.
-- **Matrículas localizadas**: **38** (una por ID de vehículo en movimiento).
-- **Matrículas visibles con texto reconocido por OCR**: **30 matrículas leídas** (`29` textos únicos; las 8 restantes corresponden a motocicletas o placas muy lejanas).
-- **Flujo de coches**, calculado sobre las trayectorias guardadas en `results/resultado_C0142_detecciones.csv`:
+- **Total personas únicas detectadas**: 90 IDs.
+- **Total vehículos únicos detectados (en movimiento)**: **55 IDs** (`car`: 45, `motorcycle`: 5, `bicycle`: 3, `bus`: 2).
+- **Matrículas localizadas**: **39** (una por ID de vehículo en movimiento).
+- **Matrículas con texto reconocido por OCR**: **30 matrículas leídas** (29 textos únicos).
+- **Flujo de coches**:
   - Hacia la cámara por los carriles de la izquierda: **16**.
   - Hacia el fondo por los carriles de la derecha: **11**.
   - Sentido con más tráfico: **hacia la cámara**.
+
+![Recuento al final del vídeo](images/resultado_tracking_hud.jpg)
+*Último fotograma del vídeo procesado con los dos contadores de flujo.*
 
 ---
 

@@ -1,7 +1,14 @@
-import os, sys, subprocess, urllib.request
+import os
+import sys
+import urllib.request
 
 P4_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REPO = os.path.join(P4_ROOT, "RT-DETR", "rtdetrv2_pytorch")
+if not os.path.isfile(os.path.join(REPO, "src", "core", "__init__.py")):
+    raise ModuleNotFoundError(
+        "Falta el código de RT-DETR. Desde P4 ejecuta: "
+        "git clone --depth 1 https://github.com/lyuwenyu/RT-DETR.git RT-DETR"
+    )
 repo_abs = os.path.abspath(REPO)
 if repo_abs not in sys.path:
     sys.path.insert(0, repo_abs)
@@ -69,10 +76,11 @@ def load_rtdetr(family="v2", size="s", device=DEVICE):
     
     # Teniendo el archivo de configuración y los pesos descargados, cargamos el modelo y el postprocesador.
     load_config.__defaults__[0].clear()
-    cfg = YAMLConfig(f"{REPO}/configs/{cfg_name}")
+    # El checkpoint completo ya incluye el backbone.
+    cfg = YAMLConfig(f"{REPO}/configs/{cfg_name}", PResNet={"pretrained": False})
    
     ckpt = torch.load(WEIGHTS, map_location="cpu", weights_only=True)
     cfg.model.load_state_dict(ckpt["ema"]["module"] if "ema" in ckpt else ckpt["model"])
-    model = cfg.model.deploy().to(device)
+    model = cfg.model.deploy().to(device).eval()
     postprocessor = cfg.postprocessor.deploy().to(device)
     return model, postprocessor

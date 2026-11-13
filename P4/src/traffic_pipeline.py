@@ -321,27 +321,41 @@ class PlateOCR:
         self.vlm_model = None
         self.vlm_prompt = None
         self._clahe = cv2.createCLAHE(clipLimit=2.2, tileGridSize=(4, 4))
+        weights_dir = _P4_ROOT / "weights"
 
         if self.mode in ("hybrid", "fast_ocr"):
             try:
                 from fast_plate_ocr import LicensePlateRecognizer
+                from fast_plate_ocr.inference.hub import download_model
                 print("Cargando lector especializado fast-plate-ocr (cct-s-v2-global-model) en cpu...")
-                self.fast_reader = LicensePlateRecognizer("cct-s-v2-global-model", device="cpu")
+                model_path, config_path = download_model(
+                    "cct-s-v2-global-model",
+                    save_directory=weights_dir / "fast-plate-ocr" / "cct-s-v2-global-model",
+                )
+                self.fast_reader = LicensePlateRecognizer(
+                    onnx_model_path=model_path, plate_config_path=config_path, device="cpu"
+                )
             except Exception as exc:
                 print(f"Aviso: no se pudo cargar fast-plate-ocr ({exc}); usando motores alternativos.")
 
         if self.mode in ("easyocr", "hybrid"):
             import easyocr
             print(f"Cargando lector OCR clásico EasyOCR en {self.device}...")
-            self.easy_reader = easyocr.Reader(["es", "en"], gpu=(self.device == "cuda"), verbose=False)
+            self.easy_reader = easyocr.Reader(
+                ["es", "en"], gpu=(self.device == "cuda"), verbose=False,
+                model_storage_directory=str(weights_dir / "easyocr" / "model"),
+                user_network_directory=str(weights_dir / "easyocr" / "user_network"),
+            )
 
         if self.mode in ("smolvlm", "hybrid"):
             from transformers import AutoProcessor, AutoModelForImageTextToText
             model_id = "HuggingFaceTB/SmolVLM-Instruct"
+            cache_dir = weights_dir / "huggingface" / "hub"
             print(f"Cargando modelo VLM '{model_id}' en {self.device} (bfloat16)...")
-            self.vlm_processor = AutoProcessor.from_pretrained(model_id)
+            self.vlm_processor = AutoProcessor.from_pretrained(model_id, cache_dir=cache_dir)
             self.vlm_model = AutoModelForImageTextToText.from_pretrained(
                 model_id,
+                cache_dir=cache_dir,
                 dtype=torch.bfloat16,
                 _attn_implementation="sdpa" if self.device == "cuda" else "eager"
             ).to(self.device).eval()
