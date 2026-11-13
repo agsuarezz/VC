@@ -12,8 +12,10 @@ def main():
     parser.add_argument("--conf", type=float, default=0.10, help="Umbral mínimo de confianza de las detecciones enviadas al tracker")
     parser.add_argument("--model", default="yolo11m.pt", help="Modelo YOLO general (default: yolo11m.pt)")
     parser.add_argument("--imgsz", type=int, default=1280, help="Resolución de inferencia (default: 1280)")
-    parser.add_argument("--ocr", default="hybrid", choices=["hybrid", "easyocr", "smolvlm", "none"], help="Motor de OCR para matrículas (default: hybrid)")
+    parser.add_argument("--ocr", default="hybrid", choices=["hybrid", "fast_ocr", "easyocr", "smolvlm", "none"], help="Motor de OCR para matrículas (default: hybrid)")
     parser.add_argument("--use_contours", action="store_true", help="Usar fallback de contornos morfológicos para matrículas (Extra 3)")
+    parser.add_argument("--include_parked", action="store_true", help="Desactivar filtro de movimiento e incluir vehículos estacionados")
+    parser.add_argument("--motion_min_disp", type=float, default=30.0, help="Desplazamiento mínimo (px) para validar vehículo en movimiento (default: 30.0)")
     args = parser.parse_args()
 
     plate_model = "best_matriculas.pt" if os.path.exists("best_matriculas.pt") else None
@@ -35,6 +37,8 @@ def main():
         max_frames=args.max_frames,
         anonymize=args.anonymize,
         use_contour_plates=args.use_contours,
+        only_moving=not args.include_parked,
+        motion_min_span=args.motion_min_disp,
         display=False
     )
 

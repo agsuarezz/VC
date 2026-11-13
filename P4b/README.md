@@ -183,42 +183,52 @@ Para una evaluación cuantitativa completa se han calculado cuatro métricas de 
 
 ## 4.8 Integración del Reconocimiento OCR en Vídeo (`C0142.MP4`) y Volcado al CSV
 
-Para completar el sistema de vigilancia de tráfico de la Práctica 4 (`../P4/traffic_pipeline.py` y `../P4/run_pipeline.py`), se ha integrado la clase `PlateOCR` con estrategia **híbrida adaptativa (`--ocr hybrid`)**:
+Para completar el sistema de vigilancia de tráfico de la Práctica 4 (`../P4/traffic_pipeline.py` y `../P4/run_pipeline.py`), se ha integrado la clase `PlateOCR` con estrategia **híbrida adaptativa (`--ocr hybrid`)** junto al filtro de vehículos en movimiento (`VehicleMotionFilter`):
 
-1. **Selección dinámica del fotograma de mayor nitidez por `track_id`**: cuando un vehículo entra en escena a gran distancia, su matrícula ocupa apenas $12 \times 4\text{ px}$ y resulta ilegible. A medida que el seguimiento persistente (**BoT-SORT**) acompaña al vehículo hacia el primer plano y el ancho de la matrícula supera el umbral de legibilidad ($\ge 36 \times 12\text{ px}$ sin recorte en los bordes), se activa el módulo OCR.
-2. **Inferencia Híbrida + Validación de Consonantes Españolas**: se evalúa inicialmente con EasyOCR reescalando bicúbicamente ($\times 3$) el recorte y, en los recortes óptimos de cada `track_id`, se invoca `SmolVLM-Instruct` para garantizar la máxima precisión sin penalizar los FPS globales del vídeo.
+1. **Filtrado de vehículos estacionados (`VehicleMotionFilter`) y selección del mejor recorte por `track_id`**: mediante sustracción de fondo MOG2 y desplazamiento en ventana *lookahead* (`motion_min_span=30 px`, `lookahead=30` fotogramas), se descartan los vehículos aparcados (50 trayectorias filtradas), centrando la detección y el OCR en los vehículos en circulación. Cuando un vehículo entra en escena y su placa resulta visible sin recorte en los bordes, se activa `PlateOCR`.
+2. **Cascada Híbrida + Consenso Multiframe + Validación Española**: `PlateOCR` evalúa inicialmente con el lector ligero **`fast-plate-ocr` (`cct-s-v2-global-model`)**, complementado con **`EasyOCR`** (con ordenación por filas para placas de dos líneas) y recurriendo a **`SmolVLM-Instruct`** en recortes ambiguos. A lo largo de los fotogramas del `track_id`, un sistema de votación por calidad sintáctica acumula consenso antes de fijar la matrícula definitiva (`NNNNLLL` o provincial `LLNNNNLL`).
 3. **Visualización en Vivo en el Vídeo (`resultado_C0142_tracking.mp4`)**: el texto reconocido se muestra tanto en la etiqueta del vehículo (`car #215 (0.92) [1770JYG]`) como sobre el recuadro amarillo de la placa (`Matricula #215: 1770JYG`), actualizando también el contador `OCR` del HUD superior.
 4. **Volcado Estandarizado al CSV (`resultado_C0142_detecciones.csv`)**: se completa la decimoquinta columna `texto_matricula` para cada vehículo cuya matrícula resulta visible a lo largo de su trayectoria.
 
 ![Visualización del Vídeo con OCR Activo](images/resultado_tracking_ocr_hud.jpg)
-*Figura 4. Fotograma 2141 de `resultado_C0142_tracking.mp4` mostrando la lectura en vivo `Matricula #215: 1770JYG` sobre la caja delimitadora de la matrícula y en el identificador del vehículo, junto con el HUD actualizado.*
+*Figura 4. Fotograma 2141 de `resultado_C0142_tracking.mp4` mostrando la lectura en vivo `Matricula #215: 1770JYG` sobre la caja delimitadora de la matrícula y en el identificador del vehículo, junto con el HUD actualizado (sin vehículos aparcados).*
 
 ### Extracto de Matrículas Reconocidas en `resultado_C0142_detecciones.csv`
 
-De las **50 matrículas localizadas** en la secuencia `C0142.MP4` (2.832 fotogramas), **28 corresponden a vehículos que alcanzan una distancia con caracteres legibles** (las 22 restantes pertenecen a vehículos lejanos o aparcados al fondo con placas de $<22\text{ px}$ de ancho), obteniéndose su transcripción en la columna `texto_matricula`:
+De las **38 matrículas localizadas** sobre los 57 vehículos en movimiento detectados en `C0142.MP4` (2.832 fotogramas, `18.794` registros totales en CSV), **30 obtienen su texto reconocido mediante OCR** (`29` textos únicos en la columna `texto_matricula`, correspondiendo las 8 restantes a motocicletas o vehículos muy lejanos):
 
 ```csv
 fotograma,tipo_objeto,confianza,identificador_tracking,x1,y1,x2,y2,matrícula_en_su_caso,confianza,mx1,my1,mx2,my2,texto_matricula
-1,bus,0.958,1,1395,52,1918,483,Si,0.64,1667,387,1718,401,322PCX
-425,car,0.858,42,979,309,1028,338,Si,0.712,543,478,658,510,3713LKC
-796,car,0.916,70,347,275,935,625,Si,0.613,430,503,563,540,3713LKC
-875,car,0.865,73,1065,311,1139,344,Si,0.699,205,568,375,618,0243MCG
-1125,car,0.751,77,1181,318,1216,343,Si,0.662,472,497,591,534,6713HCR
-1271,car,0.822,95,1150,311,1201,357,Si,0.702,358,521,489,564,2914FGN
-1330,car,0.829,109,1144,305,1197,355,Si,0.696,675,474,769,499,5766LSF
-1370,car,0.842,120,1177,306,1226,353,Si,0.703,1289,411,1348,428,0053JFW
-1467,car,0.871,141,1199,308,1253,355,Si,0.725,1885,596,1919,633,0285FKZ
-1515,car,0.793,140,1173,307,1215,347,Si,0.711,1586,516,1691,547,3685KWM
-1526,car,0.896,133,1011,309,1148,360,Si,0.714,470,497,586,539,3902FXD
-1677,car,0.819,155,1155,307,1206,352,Si,0.74,77,606,260,666,8536LKJ
-1755,car,0.781,165,1183,311,1220,343,Si,0.703,581,490,694,525,5535LTR
-1924,car,0.887,216,964,347,1080,418,Si,0.641,798,434,881,462,5695LTR
-1940,car,0.824,215,1151,309,1199,347,Si,0.756,72,581,254,641,1770JYG
-2134,car,0.852,252,1123,312,1183,345,Si,0.648,324,495,446,535,8098JXM
-2145,car,0.876,254,1634,315,1919,517,Si,0.671,1673,378,1723,391,7339LCS
-2392,car,0.812,268,1120,313,1181,345,Si,0.752,1860,727,1920,777,0965KBP
-2501,car,0.891,273,1631,322,1919,511,Si,0.664,1728,386,1781,400,5163LCR
-2681,car,0.884,294,1632,321,1919,510,Si,0.649,1817,400,1878,416,5017HDD
+1,bus,0.958,1,1395,52,1918,483,Si,0.568,1902,410,1919,427,3324HZC
+401,car,0.935,41,1624,333,1919,533,Si,0.251,1903,412,1919,425,1502LSZ
+535,car,0.765,42,1121,312,1182,345,Si,0.283,1162,333,1172,336,3713LKC
+638,car,0.939,59,1622,336,1919,521,Si,0.695,1894,446,1919,464,5744GGP
+755,car,0.769,65,1178,312,1230,349,Si,0.49,1205,335,1216,339,4035SZZ
+875,car,0.83,73,1065,311,1139,344,Si,0.427,1123,333,1132,336,0848MCG
+988,car,0.941,82,1624,331,1919,524,Si,0.638,1893,463,1920,479,3324HMS
+1125,car,0.778,77,1181,318,1216,343,Si,0.292,1194,333,1203,336,6713HCR
+1239,car,0.879,106,1634,336,1918,518,Si,0.529,1901,462,1919,484,7623LKZ
+1271,car,0.759,95,1150,311,1201,357,Si,0.318,1163,341,1178,346,2914FGN
+1330,car,0.788,109,1144,305,1197,355,Si,0.266,1157,339,1174,344,9786LCF
+1395,car,0.759,120,1175,305,1247,367,Si,0.369,1204,341,1226,350,0053JFM
+1406,car,0.943,129,1633,332,1919,523,Si,0.622,1903,462,1919,482,0216HZK
+1486,car,0.763,141,1203,307,1271,366,Si,0.27,1228,347,1249,354,0285FKZ
+1526,car,0.91,133,1011,309,1148,360,Si,0.304,1128,341,1141,345,3902FXD
+1566,car,0.783,140,1208,304,1264,359,Si,0.263,1236,341,1252,348,3685KWM
+1634,car,0.842,167,1137,307,1198,361,Si,0.336,1159,341,1177,346,9059LYY
+1677,car,0.751,155,1155,307,1206,352,Si,0.284,1174,338,1188,342,8536LKJ
+1765,car,0.629,165,1179,309,1218,344,Si,0.281,1193,333,1203,336,5695LTR
+1901,car,0.934,211,1680,324,1919,543,Si,0.27,1904,450,1919,463,5023JBD
+1924,car,0.531,216,730,243,1085,510,Si,0.628,800,435,881,459,5695LTR
+1936,truck,0.715,221,161,187,961,694,Si,0.266,250,565,415,619,5835LTT
+2050,car,0.587,215,1108,302,1196,375,Si,0.539,1135,349,1161,355,1770JYG
+2134,car,0.841,252,1123,312,1183,345,Si,0.264,1163,338,1176,342,8098JXM
+2145,car,0.931,254,1634,315,1919,517,Si,0.285,1908,401,1919,419,7339LGG
+2392,car,0.826,268,1120,313,1181,345,Si,0.254,1158,338,1172,343,1965KBP
+2455,car,0.94,271,1538,336,1919,543,Si,0.633,1889,427,1920,445,GC5273CM
+2501,car,0.934,273,1631,322,1919,511,Si,0.642,1892,402,1919,419,5143LCY
+2618,car,0.943,281,1613,320,1919,520,Si,0.285,1909,414,1919,435,9733KFW
+2681,car,0.917,294,1632,321,1919,510,Si,0.45,1904,407,1919,427,5017HDD
 ```
 
 ---
@@ -229,7 +239,7 @@ fotograma,tipo_objeto,confianza,identificador_tracking,x1,y1,x2,y2,matrícula_en
    - **EasyOCR (Red Clásica CRNN)** es **$\sim 15\text{ veces más rápido}$** (**27.19 ms** frente a **409.11 ms** por placa, alcanzando **36.77 placas/s** frente a **2.44 placas/s**) y consume **$\sim 13\text{ veces menos memoria VRAM}$** (**378.8 MB** frente a **4.882,5 MB**), lo que lo hace ideal para dispositivos embebidos o procesado fotograma a fotograma sin GPU dedicada de alta gama.
    - **SmolVLM-Instruct (VLM Multimodal 2B)** supera de forma contundente a EasyOCR en precisión: alcanza un **89.44% de acierto exacto en placa completa** (frente al **59.01%** de EasyOCR con post-procesado y **49.07%** en crudo) y un **95.67% de acierto a nivel de carácter** (distancia de Levenshtein media de apenas **0.304 errores por matrícula**).
 2. **Importancia de la Heurística de Dominio**: aplicar reglas sintácticas del sistema de matriculación español (`NNNNLLL`, filtrado de la eurobanda `'E'` y corrección de homógrafos ópticos número/consonante) incrementa el acierto exacto de EasyOCR en **+9.94 puntos porcentuales** y el acierto por carácter en **+13.80 puntos porcentuales** con coste computacional nulo ($<0.01\text{ ms}$).
-3. **Optimalidad de la Arquitectura Híbrida en Vídeo con Tracking**: en secuencias de vídeo como `C0142.MP4`, gracias al seguimiento persistente (**BoT-SORT**), no es necesario ejecutar un VLM pesado en cada uno de los 2.832 fotogramas; basta con invocar el OCR/VLM únicamente cuando el vehículo rastreado (`track_id`) alcanza su ventana de máxima resolución espacial en primer plano y propagar la matrícula reconocida al resto de su trayectoria y al fichero CSV.
+3. **Optimalidad de la Arquitectura Híbrida y Consenso en Vídeo**: en secuencias de vídeo como `C0142.MP4`, el filtrado previo de vehículos estacionados (`VehicleMotionFilter`) evita evaluar matrículas irrelevantes de vehículos aparcados, mientras que el seguimiento persistente (**BoT-SORT**) permite ejecutar primero el modelo ligero `fast-plate-ocr` / `EasyOCR`, reservar `SmolVLM-Instruct` para recortes ambiguos y consolidar el texto definitivo por consenso multiframe antes de volcarlo al vídeo y al fichero CSV.
 
 ---
 Bajo licencia de Creative Commons Reconocimiento - No Comercial 4.0 Internacional.

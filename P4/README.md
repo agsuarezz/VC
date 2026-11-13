@@ -18,7 +18,7 @@ El trabajo aborda el **100% de los requisitos obligatorios** de ambas entregas (
 - **Requisitos Obligatorios (P4 + P4b)**:
   - Detección y seguimiento persistente de personas y vehículos (`car`, `bus`, `truck`, `motorcycle`, `bicycle`) mediante **YOLO11** y **BoT-SORT** (`persist=True`).
   - Entrenamiento de un modelo detector de matrículas personalizado en formato YOLO a partir de un conjunto de datos real (`best_matriculas.pt`).
-  - Localización de matrículas, asignación espacial al vehículo correspondiente y **reconocimiento OCR del texto de cada matrícula visible** (`PlateOCR` híbrido EasyOCR + SmolVLM con validación sintáctica española).
+  - Localización de matrículas sobre vehículos en movimiento (filtrando vehículos estacionados con `VehicleMotionFilter`), asignación espacial al vehículo correspondiente y **reconocimiento OCR adaptativo con consenso multiframe** (`PlateOCR` en cascada `fast-plate-ocr` → `EasyOCR` → `SmolVLM-Instruct` con validación sintáctica española).
   - Conteo acumulado de instancias únicas y desglose por clases sobre la secuencia completa (2.832 fotogramas, 1 min 53 s).
   - Renderizado y volcado a disco del vídeo anotado completo con HUD en tiempo real, recuadros de seguimiento y **visualización de la matrícula leída** (`resultado_C0142_tracking.mp4`).
   - Generación del archivo CSV estructurado con el esquema exacto de 15 columnas incluyendo la columna `texto_matricula` completada (`resultado_C0142_detecciones.csv`).
@@ -126,22 +126,22 @@ flowchart LR
 
 El sistema procesa la secuencia completa de evaluación `C0142.MP4` (**2.832 fotogramas, 113.28 segundos**) integrando detección, tracking y lectura OCR de matrículas en tiempo real:
 
-1. **Seguimiento con BoT-SORT y reidentificación**: las detecciones débiles pueden continuar un seguimiento y las de mayor confianza pueden iniciar uno nuevo. En la cámara fija de `C0142.MP4` se calibran siete posiciones de la fila aparcada cuya ocupación se conserva a lo largo del clip (`parking_identity.py`).
-2. **Asociación Vehículo–Matrícula y Reconocimiento OCR Adaptativo (`PlateOCR`)**: se asigna la placa al vehículo que mejor contiene su recuadro. A medida que un vehículo se aproxima a cámara y su matrícula alcanza resolución legible ($\ge 36 \times 12\text{ px}$ sin recorte en los bordes), se ejecuta el motor OCR híbrido (`EasyOCR` + `SmolVLM-Instruct`) con post-procesado sintáctico de matrículas españolas (`NNNNLLL`), actualizando la etiqueta visual en pantalla (`Matricula #ID: TEXTO`) y el registro correspondiente en el CSV.
-3. **HUD Informativo en Vivo**: monitorización gráfica superior que refleja fotogramas, personas, desglose de vehículos, matrículas detectadas y leídas con OCR, y estadísticas de flujo direccional.
+1. **Seguimiento con BoT-SORT, reidentificación y filtro de vehículos estacionados (`VehicleMotionFilter`)**: las detecciones débiles pueden continuar un seguimiento y las de mayor confianza pueden iniciar uno nuevo. En la cámara fija de `C0142.MP4`, el filtro de movimiento (`VehicleMotionFilter`, que combina sustracción de fondo MOG2 con desplazamiento neto en ventana *lookahead* de 30 fotogramas y umbral mínimo de `30 px`) junto con la calibración de aparcamientos (`parking_identity.py`) descarta los vehículos aparcados para evitar falsos conteos y lecturas innecesarias.
+2. **Asociación Vehículo–Matrícula y Reconocimiento OCR Adaptativo (`PlateOCR`)**: se asigna la placa al vehículo en movimiento que mejor contiene su recuadro. A medida que un vehículo se aproxima a cámara y su matrícula supera el umbral de legibilidad sin recorte en los bordes, `PlateOCR` ejecuta una cascada híbrida (`fast-plate-ocr` `cct-s-v2-global-model` → `EasyOCR` con ordenación por filas → `SmolVLM-Instruct` en recortes ambiguos) con acumulación de consenso multiframe por `track_id` y post-procesado sintáctico de matrículas españolas (`NNNNLLL` y provinciales `LLNNNNLL`), actualizando la etiqueta visual en pantalla (`Matricula #ID: TEXTO`) y la columna `texto_matricula` del CSV.
+3. **HUD Informativo en Vivo**: monitorización gráfica superior que refleja fotogramas, personas, desglose de vehículos en movimiento, matrículas detectadas y leídas con OCR, y estadísticas de flujo direccional.
 
 ![Resultado de Seguimiento, OCR y HUD](images/resultado_tracking_ocr_hud.jpg)
-*Captura del fotograma 2141 de `resultado_C0142_tracking.mp4` mostrando el HUD superior, el seguimiento del vehículo (`car #215 [1770JYG]`) y la lectura en vivo sobre el recuadro de la placa (`Matricula #215: 1770JYG`).*
+*Captura del fotograma 2141 de `resultado_C0142_tracking.mp4` mostrando el HUD superior (con vehículos aparcados filtrados), el seguimiento de `car #215 [1770JYG]` y la lectura en vivo sobre el recuadro de la placa (`Matricula #215: 1770JYG`).*
 
 ### Resultados Globales sobre la Secuencia Completa:
 - **Modelo General de Detección**: **YOLO11 Medium (`yolo11m.pt`)** con inferencia a alta resolución (**`imgsz=1280`**).
 - **Fotogramas procesados**: 2.832 fotogramas (100% del vídeo).
 - **Total personas únicas detectadas**: 91 IDs.
-- **Total vehículos únicos detectados**: 107 IDs (`car`: 88, `truck`: 6, `motorcycle`: 6, `bicycle`: 4, `bus`: 3).
-- **Matrículas localizadas**: 50 (una por ID de vehículo).
-- **Matrículas visibles con texto reconocido por OCR**: **28 matrículas leídas** (el resto corresponde a vehículos lejanos al fondo con placas de $<22\text{ px}$).
+- **Total vehículos únicos detectados (en movimiento)**: **57 IDs** (`car`: 48, `motorcycle`: 4, `bicycle`: 3, `bus`: 2), tras filtrar **50 trayectorias estacionarias/aparcadas**.
+- **Matrículas localizadas**: **38** (una por ID de vehículo en movimiento).
+- **Matrículas visibles con texto reconocido por OCR**: **30 matrículas leídas** (`29` textos únicos; las 8 restantes corresponden a motocicletas o placas muy lejanas).
 - **Flujo direccional de personas y vehículos en movimiento**:
-  - Sentido derecha a izquierda: 45 IDs.
+  - Sentido derecha a izquierda: 44 IDs.
   - Sentido izquierda a derecha: 39 IDs.
   - Salidas laterales por la derecha: 7 | por la izquierda: 4.
 
@@ -150,7 +150,7 @@ El sistema procesa la secuencia completa de evaluación `C0142.MP4` (**2.832 fot
 ## 6. Extras: Flujo Direccional y Anonimización
 
 ### Extra 1 (+0.25p): Flujo Direccional y Salidas Laterales
-- Se calcula el desplazamiento horizontal $\Delta x = x_t - x_{t-N}$ con el historial de cada `track_id`, excluyendo del flujo los vehículos estacionados en las plazas calibradas.
+- Se calcula el desplazamiento horizontal $\Delta x = x_t - x_{t-N}$ con el historial de cada `track_id`, excluyendo vehículos estacionados mediante `VehicleMotionFilter` y `parking_identity.py`.
 
 ### Extra 4 (+0.25p): Anonimización de Privacidad
 - Modo conmutable de privacidad (`--anonymize`) mediante desenfoque gaussiano adaptativo (`cv2.GaussianBlur`) sobre la totalidad de personas y placas de matrícula localizadas.
@@ -168,25 +168,29 @@ El procesado genera el fichero `resultado_C0142_detecciones.csv` con las **15 co
 fotograma,tipo_objeto,confianza,identificador_tracking,x1,y1,x2,y2,matrícula_en_su_caso,confianza,mx1,my1,mx2,my2,texto_matricula
 ```
 
-- **Total de registros generados**: **35.353 detecciones** a lo largo de los 2.832 fotogramas.
+- **Total de registros generados**: **18.794 detecciones** a lo largo de los 2.832 fotogramas (solo personas y vehículos en movimiento validados por `VehicleMotionFilter`).
 - **Para personas**: los campos de matrícula quedan vacíos / `None`.
-- **Para vehículos**: se registra con `Si` la detección de matrícula de cada `identificador_tracking`, sus coordenadas `mx1, my1, mx2, my2`, su confianza y el texto reconocido en `texto_matricula`.
+- **Para vehículos**: se registra con `Si` la detección de matrícula de cada `identificador_tracking`, sus coordenadas `mx1, my1, mx2, my2`, su confianza y el texto reconocido en `texto_matricula` (30 placas leídas de las 38 registradas).
 
 ```csv
 fotograma,tipo_objeto,confianza,identificador_tracking,x1,y1,x2,y2,matrícula_en_su_caso,confianza,mx1,my1,mx2,my2,texto_matricula
-1,bus,0.958,1,1395,52,1918,483,Si,0.64,1667,387,1718,401,322PCX
-425,car,0.858,42,979,309,1028,338,Si,0.712,543,478,658,510,3713LKC
-796,car,0.916,70,347,275,935,625,Si,0.613,430,503,563,540,3713LKC
-875,car,0.865,73,1065,311,1139,344,Si,0.699,205,568,375,618,0243MCG
-1125,car,0.751,77,1181,318,1216,343,Si,0.662,472,497,591,534,6713HCR
-1271,car,0.822,95,1150,311,1201,357,Si,0.702,358,521,489,564,2914FGN
-1330,car,0.829,109,1144,305,1197,355,Si,0.696,675,474,769,499,5766LSF
-1370,car,0.842,120,1177,306,1226,353,Si,0.703,1289,411,1348,428,0053JFW
-1467,car,0.871,141,1199,308,1253,355,Si,0.725,1885,596,1919,633,0285FKZ
-1677,car,0.819,155,1155,307,1206,352,Si,0.74,77,606,260,666,8536LKJ
-1940,car,0.824,215,1151,309,1199,347,Si,0.756,72,581,254,641,1770JYG
-2134,car,0.852,252,1123,312,1183,345,Si,0.648,324,495,446,535,8098JXM
-2392,car,0.812,268,1120,313,1181,345,Si,0.752,1860,727,1920,777,0965KBP
+1,bus,0.958,1,1395,52,1918,483,Si,0.568,1902,410,1919,427,3324HZC
+401,car,0.935,41,1624,333,1919,533,Si,0.251,1903,412,1919,425,1502LSZ
+535,car,0.765,42,1121,312,1182,345,Si,0.283,1162,333,1172,336,3713LKC
+638,car,0.939,59,1622,336,1919,521,Si,0.695,1894,446,1919,464,5744GGP
+875,car,0.83,73,1065,311,1139,344,Si,0.427,1123,333,1132,336,0848MCG
+1125,car,0.778,77,1181,318,1216,343,Si,0.292,1194,333,1203,336,6713HCR
+1271,car,0.759,95,1150,311,1201,357,Si,0.318,1163,341,1178,346,2914FGN
+1395,car,0.759,120,1175,305,1247,367,Si,0.369,1204,341,1226,350,0053JFM
+1486,car,0.763,141,1203,307,1271,366,Si,0.27,1228,347,1249,354,0285FKZ
+1526,car,0.91,133,1011,309,1148,360,Si,0.304,1128,341,1141,345,3902FXD
+1677,car,0.751,155,1155,307,1206,352,Si,0.284,1174,338,1188,342,8536LKJ
+1936,truck,0.715,221,161,187,961,694,Si,0.266,250,565,415,619,5835LTT
+2050,car,0.587,215,1108,302,1196,375,Si,0.539,1135,349,1161,355,1770JYG
+2134,car,0.841,252,1123,312,1183,345,Si,0.264,1163,338,1176,342,8098JXM
+2392,car,0.826,268,1120,313,1181,345,Si,0.254,1158,338,1172,343,1965KBP
+2455,car,0.94,271,1538,336,1919,543,Si,0.633,1889,427,1920,445,GC5273CM
+2681,car,0.917,294,1632,321,1919,510,Si,0.45,1904,407,1919,427,5017HDD
 ```
 
 ---
@@ -223,7 +227,7 @@ Todas las pruebas comparativas de OCR se han ejecutado bajo condiciones idéntic
 ### 8.3 Conclusiones de la Comparativa OCR vs VLM:
 1. **Velocidad y Ligereza vs. Exactitud**: **EasyOCR** es **$\sim 15\text{ veces más rápido}$** (**27.19 ms** vs **409.11 ms**) y requiere **$\sim 13\text{ veces menos VRAM}$** (**378.8 MB** vs **4.88 GB**), mientras que **SmolVLM-Instruct** logra una ventaja de **+30.43 puntos porcentuales en acierto exacto de matrícula completa** (**89.44%** frente a **59.01%**) y alcanza un **95.67% de precisión por carácter**.
 2. **Robustez ante Perspectiva y Baja Resolución**: en placas inclinadas (`3053GLD`), el detector de líneas de EasyOCR divide y desordena los bloques (`GLD3053`), y en placas pequeñas ($<220\text{ px}$) su acierto cae al **35.71%**, mientras que SmolVLM mantiene un **78.57%** en placas pequeñas y **>91%** en medianas y grandes.
-3. **Sinergia en Vídeo**: el uso combinado de seguimiento persistente (**BoT-SORT**) e inferencia OCR selectiva sobre los fotogramas de máxima resolución de cada `track_id` permite disfrutar de la precisión del VLM en vídeo sin comprometer la velocidad global del sistema.
+3. **Sinergia en Vídeo**: el uso combinado de seguimiento persistente (**BoT-SORT**), filtrado de vehículos estacionados (`VehicleMotionFilter`) e inferencia OCR en cascada (`fast-plate-ocr` → `EasyOCR` → `SmolVLM-Instruct` con consenso multiframe por `track_id`) permite alcanzar la máxima fiabilidad (`30/38` matrículas en movimiento leídas en `C0142.MP4`) sin comprometer la velocidad global del sistema.
 
 ---
 
@@ -235,8 +239,9 @@ VC/
 │   ├── VC_P4_Entrega_Grupo33.ipynb      # Cuaderno Jupyter principal (Detección, Tracking y OCR)
 │   ├── README.md                        # Memoria técnica integrada (P4 + P4b)
 │   ├── best_matriculas.pt               # Pesos entrenados del detector de matrículas YOLO11
-│   ├── traffic_pipeline.py              # Núcleo modular (tracking, contornos, OCR híbrido, HUD, flujo)
-│   ├── run_pipeline.py                  # CLI para procesar secuencias con soporte --ocr
+│   ├── traffic_pipeline.py              # Núcleo modular (tracking, filtro movimiento, contornos, OCR híbrido, HUD, flujo)
+│   ├── parking_identity.py              # Calibración espacial de plazas estacionadas en escena fija
+│   ├── run_pipeline.py                  # CLI para procesar secuencias con soporte --ocr y filtro de movimiento
 │   ├── resultado_C0142_tracking.mp4     # Vídeo anotado completo con matrículas leídas en pantalla
 │   ├── resultado_C0142_detecciones.csv  # CSV oficial con las 15 columnas y texto_matricula completado
 │   └── images/                          # Figuras y gráficas de evaluación
