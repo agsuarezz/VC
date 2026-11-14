@@ -1,5 +1,5 @@
 # Dataset de detección de matrículas (Grupo 33)
-path: C:/Users/Alvar/Desktop/Clases/Cuarto/VC/P4/dataset
+path: c:/Users/Usuario/Desktop/Clase/VC/VC/P4/dataset
 train: train/images
 val: val/images
 test: test/images

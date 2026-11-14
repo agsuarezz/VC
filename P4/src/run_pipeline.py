@@ -3,6 +3,8 @@ import sys
 import argparse
 from pathlib import Path
 
+import torch
+
 SRC_DIR = Path(__file__).resolve().parent
 P4_ROOT = SRC_DIR.parent
 if str(SRC_DIR) not in sys.path:
@@ -28,6 +30,7 @@ def main():
     parser.add_argument("--conf", type=float, default=0.10, help="Umbral mínimo de confianza de las detecciones enviadas al tracker")
     parser.add_argument("--model", default="yolo11m.pt", help="Modelo YOLO general (default: yolo11m.pt)")
     parser.add_argument("--imgsz", type=int, default=1280, help="Resolución de inferencia (default: 1280)")
+    parser.add_argument("--device", default=None, help="Dispositivo de inferencia (por defecto, CUDA si está disponible y CPU en caso contrario)")
     parser.add_argument("--ocr", default="hybrid", choices=["hybrid", "fast_ocr", "easyocr", "smolvlm", "none"], help="Motor de OCR para matrículas (default: hybrid)")
     parser.add_argument("--use_contours", action="store_true", help="Usar fallback de contornos morfológicos para matrículas (Extra 3)")
     parser.add_argument("--include_parked", action="store_true", help="Desactivar filtro de movimiento e incluir vehículos estacionados")
@@ -43,7 +46,7 @@ def main():
         plate_model_path=plate_model,
         conf_thres=args.conf,
         imgsz=args.imgsz,
-        device="cuda:0",
+        device=args.device or ("cuda:0" if torch.cuda.is_available() else "cpu"),
         ocr_mode=ocr_mode
     )
 
