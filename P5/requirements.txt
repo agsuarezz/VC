@@ -1,0 +1,8 @@
+# Verificado en Windows x64, Python 3.12.10. Solo un paquete proporciona cv2.
+numpy==1.26.4
+opencv-contrib-python==4.11.0.86
+scikit-learn==1.6.1
+scikit-image==0.25.2
+matplotlib==3.10.1
+joblib==1.4.2
+mediapipe==0.10.21

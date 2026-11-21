@@ -1,0 +1,30 @@
+test_alignment_uses_similarity_without_shearing (test_compositor.CompositorTests.test_alignment_uses_similarity_without_shearing) ... ok
+test_live_face_replaces_target_region (test_compositor.CompositorTests.test_live_face_replaces_target_region) ... ok
+test_missing_templates_show_explanation (test_compositor.CompositorTests.test_missing_templates_show_explanation) ... ok
+test_template_fills_frame_without_camera_panel (test_compositor.CompositorTests.test_template_fills_frame_without_camera_panel) ... ok
+test_bgr_and_gray_representation_agree (test_emotion.EmotionTests.test_bgr_and_gray_representation_agree) ... ok
+test_delivered_model_predicts_and_has_train_only_scaler (test_emotion.EmotionTests.test_delivered_model_predicts_and_has_train_only_scaler) ... ok
+test_empty_and_absent_faces (test_emotion.EmotionTests.test_empty_and_absent_faces) ... ok
+test_geometry_invariant_to_translation_rotation_and_scale (test_emotion.EmotionTests.test_geometry_invariant_to_translation_rotation_and_scale) ... ok
+test_audio_generates_valid_wav_and_mute_prevents_playback (test_gestures.GestureTests.test_audio_generates_valid_wav_and_mute_prevents_playback) ... ok
+test_chalk_accepts_two_static_high_palms_without_low_preparation (test_gestures.GestureTests.test_chalk_accepts_two_static_high_palms_without_low_preparation) ... ok
+test_chalk_latches_and_rearms_only_after_visible_release (test_gestures.GestureTests.test_chalk_latches_and_rearms_only_after_visible_release) ... ok
+test_chalk_pauses_brief_hand_dropout_without_triggering_shot (test_gestures.GestureTests.test_chalk_pauses_brief_hand_dropout_without_triggering_shot) ... ok
+test_closed_palms_do_not_release (test_gestures.GestureTests.test_closed_palms_do_not_release) ... ok
+test_closed_two_hands_never_trigger_chalk (test_gestures.GestureTests.test_closed_two_hands_never_trigger_chalk) ... ok
+test_long_dropout_restarts_chalk_hold (test_gestures.GestureTests.test_long_dropout_restarts_chalk_hold) ... ok
+test_low_frame_rate_continuous_palms_still_trigger (test_gestures.GestureTests.test_low_frame_rate_continuous_palms_still_trigger) ... ok
+test_particles_are_bounded (test_gestures.GestureTests.test_particles_are_bounded) ... ok
+test_shot_requires_low_to_high_and_respects_cooldown (test_gestures.GestureTests.test_shot_requires_low_to_high_and_respects_cooldown) ... ok
+test_static_raised_hand_does_not_fire (test_gestures.GestureTests.test_static_raised_hand_does_not_fire) ... ok
+test_tracking_loss_and_long_gap_cancel_sequence (test_gestures.GestureTests.test_tracking_loss_and_long_gap_cancel_sequence) ... ok
+test_two_palms_prioritize_chalk_and_order_is_irrelevant (test_gestures.GestureTests.test_two_palms_prioritize_chalk_and_order_is_irrelevant) ... ok
+test_flickering_and_loss_reset (test_runtime.RuntimeTests.test_flickering_and_loss_reset) ... ok
+test_recording_caps_duration_even_with_sparse_frames (test_runtime.RuntimeTests.test_recording_caps_duration_even_with_sparse_frames) ... ok
+test_face_filter_reacts_to_mouth_and_tracks_head (test_visuals.VisualTests.test_face_filter_reacts_to_mouth_and_tracks_head) ... ok
+test_missing_asset_keeps_camera_and_renders_placeholder (test_visuals.VisualTests.test_missing_asset_keeps_camera_and_renders_placeholder) ... ok
+
+----------------------------------------------------------------------
+Ran 25 tests in 2.207s
+
+OK
