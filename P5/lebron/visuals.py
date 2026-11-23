@@ -15,6 +15,7 @@ class FaceObservation:
     mouth_open: bool = False
     blendshapes: np.ndarray | None = None
     frame_size: tuple[int, int] | None = None
+    blendshape_map: dict[str, float] | None = None
 
 
 class FaceTracker:
@@ -55,10 +56,13 @@ class FaceTracker:
         lip_gap = np.linalg.norm(points[13] - points[14])
         mouth_width = np.linalg.norm(points[78] - points[308])
         scores = None
+        score_map = None
         if result.face_blendshapes:
-            scores = np.asarray([p.score for p in sorted(result.face_blendshapes[0], key=lambda p: p.category_name)], dtype=np.float32)
+            ordered = sorted(result.face_blendshapes[0], key=lambda p: p.category_name)
+            scores = np.asarray([p.score for p in ordered], dtype=np.float32)
+            score_map = {p.category_name: float(p.score) for p in ordered}
         return FaceObservation((int(x0), int(y0), int(x1-x0), int(y1-y0)), lm,
-                               bool(lip_gap / max(mouth_width, 1.0) > 0.30), scores, (w, h))
+                               bool(lip_gap / max(mouth_width, 1.0) > 0.30), scores, (w, h), score_map)
 
     def close(self):
         if self._detector is not None:

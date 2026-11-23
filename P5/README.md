@@ -1,6 +1,9 @@
-# LeBron Lab · práctica 5 · versión 5
+# LeBron Lab & Arte Generativo Facial · práctica 5 · versión 5
 
-Filtro local de LeBron para Windows con webcam, barba y corona. La aplicación incluye el clasificador de expresiones entrenado para la práctica. Este filtro reúne las reacciones faciales y los gestos de baloncesto en una vista. El segundo prototipo de la práctica queda por elegir.
+Aplicación local para Windows con webcam que reúne los **dos prototipos** de la Práctica 5:
+
+1. **Prototipo 1 — LeBron Lab (`app.py` / `iniciar.bat`):** barba y corona sobre el rostro, clasificador de expresiones entrenado para la práctica y gestos de baloncesto con audio.
+2. **Prototipo 2 — Arte Generativo Facial (`app_arte.py` / `iniciar_arte.bat`):** lienzo visual reactivo inspirado en *Más Que la Cara* (Zach Lieberman) que transforma tus landmarks 3D y `blendshapes` en gráficos en tiempo real con 3 modos artísticos.
 
 ## Abrir
 
@@ -53,7 +56,33 @@ La ayuda muestra cuántas manos detecta y el estado del gesto. [Cómo funcionan 
 
 `--windowed` inicia en ventana. Los WAV son efectos originales sintetizados; se reproducen con winsound en Windows. No requieren descargas de sonidos comerciales. En otros sistemas el audio puede quedar deshabilitado.
 
-La grabación se guarda en `recordings/`, como AVI MJPEG, con **máximo 30 segundos** y **sin audio**. Mantiene duración real mediante repetición de fotogramas si el ordenador va lento. Usa R o `--record recordings/demo.avi`. Para el vídeo de entrega cuando esté listo el segundo filtro, muestra ambos prototipos. Si quieres que se oigan los efectos de LeBron, usa una grabadora de pantalla que capture el audio del sistema.
+La grabación se guarda en `recordings/`, como AVI MJPEG, con **máximo 30 segundos** y **sin audio**. Mantiene duración real mediante repetición de fotogramas si el ordenador va lento. Usa R o `--record recordings/demo.avi`. Para el vídeo de entrega muestra ambos prototipos (`app.py` y `app_arte.py`). Si quieres que se oigan los efectos de LeBron, usa una grabadora de pantalla que capture el audio del sistema.
+
+## Arte Generativo Facial (Prototipo 2)
+
+Inspirado en *Más Que la Cara* (Zach Lieberman), este segundo prototipo convierte tu rostro en un lienzo visual interactivo usando los 478 landmarks 3D y los 52 `blendshapes` de `face_landmarker.task`.
+
+Para abrirlo haz doble clic en **iniciar_arte.bat** o ejecuta:
+
+```powershell
+python app_arte.py
+```
+
+Reacciones faciales implementadas:
+
+- **Abrir la boca:** emite ondas concéntricas (o caracteres en modo tipográfico) cuya escala y velocidad crecen con la apertura mandibular.
+- **Levantar las cejas:** dispara destellos luminosos desde ojos y cejas.
+- **Inclinar o mover la cabeza:** rota la paleta de colores HSV, activa estelas temporales (*motion trail*) y genera paralaje en el modo 3D.
+- **Guiñar un ojo:** alterna entre los 3 modos artísticos (ignora parpadeos normales de ambos ojos y aplica *cooldown*):
+  1. **Neón + Ondas:** contornos faciales con brillo *glow*, iris luminosos, estela y ondas desde la boca.
+  2. **Tipografía Facial:** silueta dibujada con caracteres dinámicos que reaccionan al habla/apertura bucal.
+  3. **Topografía 3D:** malla y nodos coloreados por profundidad `z` con efecto paralaje.
+
+Controles específicos de `app_arte.py`: `1`/`2`/`3` (o guiño) cambian de modo, `B` alterna entre cámara atenuada y fondo negro puro, `H` oculta/muestra telemetría, `F` pantalla completa, `R` graba hasta 30 s en `recordings/` y `Q`/`Esc` sale.
+
+```powershell
+python app_arte.py --video TU_VIDEO.avi --headless --max-frames 60 --record recordings/prueba_arte.avi
+```
 
 ## Entrenamiento mejorado
 
@@ -78,4 +107,4 @@ La vista `reports/preview_lebron_v5.jpg` usa la fotografía de referencia de la 
 
 Modelos oficiales de Google y hashes: `models/sources.json`. Si faltan, ejecuta `python scripts/download_models.py`. MediaPipe Tasks funciona en CPU en modo IMAGE; la aplicación reutiliza una sola detección facial por fotograma para clasificar y componer. El rendimiento depende del equipo y no se ha medido FPS de webcam aquí.
 
-El [enunciado](https://github.com/otsedom/otsedom.github.io/blob/main/VC/P5/README.md#tarea) pide dos escenarios que reaccionen al rostro, uno con entrenamiento propio y un vídeo máximo de 30 s. El filtro de LeBron usa el clasificador propio y reacciona a la cara y las manos. El segundo prototipo puede reaccionar a puntos faciales con reglas sencillas. Se revisaron los notebooks de HOG/SVM y MediaPipe; se conserva HOG como comparación reproducible y se amplía el clasificador con geometría. La precisión en webcam requiere una evaluación adicional con personas y sesiones nuevas.
+El [enunciado](https://github.com/otsedom/otsedom.github.io/blob/main/VC/P5/README.md#tarea) pide dos escenarios que reaccionen al rostro, uno con entrenamiento propio y un vídeo máximo de 30 s. El filtro de LeBron (`app.py`) usa el clasificador propio y reacciona a la cara y las manos; el segundo prototipo (`app_arte.py`) convierte los landmarks 3D y `blendshapes` faciales en arte generativo interactivo. Se revisaron los notebooks de HOG/SVM y MediaPipe; se conserva HOG como comparación reproducible y se amplía el clasificador con geometría. La precisión en webcam requiere una evaluación adicional con personas y sesiones nuevas.
