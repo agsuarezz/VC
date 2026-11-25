@@ -1,6 +1,5 @@
 """Filtro LeBron con barba, corona, sonidos por expresión, tiro y talco."""
 import argparse
-from collections import Counter, deque
 from datetime import datetime
 from pathlib import Path
 import sys
@@ -27,45 +26,16 @@ def arguments():
     return parser.parse_args()
 
 
-def text(frame, message, y, color=(240, 240, 240)):
-    cv2.putText(frame, message, (14, y), cv2.FONT_HERSHEY_SIMPLEX, .5, color, 1, cv2.LINE_AA)
-
-
-def draw_expression_scores(frame, history, score_history, active, names):
-    votes = Counter(label for label, _ in history)
-    title = 'Emocion activa: ' + names.get(active, 'en espera')
-    metric = 'Votos recientes'
-    if score_history:
-        metric = 'Puntuaciones del modelo'
-        scores = '  |  '.join(
-            f'{name} {sum(sample[label] for sample in score_history) / len(score_history):.1%}'
-            for label, name in names.items())
-    elif votes:
-        scores = '  |  '.join(f'{name} {votes[label] / len(history):.0%}' for label, name in names.items())
-    else:
-        scores = 'Muestra el rostro para ver las cinco expresiones'
-    lines = (title + '  /  ' + metric, scores)
-    font = cv2.FONT_HERSHEY_SIMPLEX
-    width = max(cv2.getTextSize(line, font, .5, 1)[0][0] for line in lines)
-    panel = frame[:49, :width + 28]
-    shade = np.full_like(panel, (24, 20, 32))
-    cv2.addWeighted(shade, .76, panel, .24, 0, dst=panel)
-    scale = .5 * min(1., max(1, frame.shape[1] - 28) / width)
-    for line, y, color in zip(lines, (18, 39), ((100, 240, 240), (245, 245, 245))):
-        cv2.putText(frame, line, (14, y), font, scale, color, 1, cv2.LINE_AA)
-
-
-def draw_hand_feedback(frame, hands):
-    """Mostrar qué manos está viendo el detector para corregir el encuadre."""
-    h, w = frame.shape[:2]
-    chains = ((0,1,2,3,4),(0,5,6,7,8),(5,9,10,11,12),(9,13,14,15,16),(13,17,18,19,20),(0,17))
-    for hand in hands:
-        points = np.rint(hand[:, :2] * (w, h)).astype(int)
-        for chain in chains:
-            for a, b in zip(chain, chain[1:]):
-                cv2.line(frame, tuple(points[a]), tuple(points[b]), (70, 220, 100), 2, cv2.LINE_AA)
-        for p in points:
-            cv2.circle(frame, tuple(p), 3, (255, 220, 100), -1, cv2.LINE_AA)
+def draw_predominant_emotion(frame, active, names):
+    """Muestra únicamente el nombre de la emoción predominante, sin paneles."""
+    name = names.get(active)
+    if not name:
+        return
+    font = cv2.FONT_HERSHEY_DUPLEX
+    scale = max(0.75, min(1.05, frame.shape[1] / 960.0))
+    pos = (20, int(round(44 * scale)))
+    cv2.putText(frame, name, pos, font, scale, (15, 15, 15), 4, cv2.LINE_AA)
+    cv2.putText(frame, name, pos, font, scale, (250, 250, 250), 2, cv2.LINE_AA)
 
 
 def draw_ball(frame, origin, age):
@@ -83,7 +53,14 @@ def main():
     if args.headless and not args.video:
         print('--headless requiere --video; no se abre la webcam sin vista previa.', file=sys.stderr)
         return 2
-    from lebron.visuals import FaceTracker, draw_lebron_filter, draw_sun
+    from lebron.visuals import (
+        FaceTracker,
+        TacoRain,
+        apply_sad_grayscale,
+        draw_lebron_filter,
+        draw_sun,
+        draw_taco_tuesday,
+    )
     from lebron.gestures import HandTracker, GestureEngine, ParticleSystem
     from lebron.audio import AudioPlayer, EXPRESSION_SOUNDS
     from lebron.emotion import EmotionModel, ExpressionFaceCropper
@@ -91,18 +68,15 @@ def main():
     expression_names = {label: name for label, (name, _) in EXPRESSION_SOUNDS.items()}
     expression_names['neutral'] = 'Neutral'
     face = hands = cap = audio = recorder = emotion = None
-    notices = []
     try:
         try:
             face = FaceTracker(ROOT / 'models/face_landmarker.task', video=True)
         except Exception as exc:
-            notices.append('Sin landmarks faciales: ejecuta scripts/download_models.py')
             print(f'No se pudo iniciar landmarks faciales: {exc}\nEjecuta python scripts/download_models.py', file=sys.stderr)
         try:
             gesture_model = ROOT / 'models/gesture_recognizer.task'
             hands = HandTracker(gesture_model if gesture_model.is_file() else ROOT / 'models/hand_landmarker.task')
         except Exception as exc:
-            notices.append('Manos no disponibles: ejecutar scripts/download_models.py')
             print(f'Manos no disponibles: {exc}', file=sys.stderr)
         emotion = None
         if args.model.is_file():
@@ -110,11 +84,10 @@ def main():
                 emotion = EmotionModel(args.model)
             except Exception as exc:
                 print(f'No se pudo cargar el modelo de expresiones: {exc}', file=sys.stderr)
-        if emotion is None:
-            notices.append('Sin modelo propio: consultar README para entrenar')
         audio = AudioPlayer(ROOT / 'assets')
         audio.muted = args.mute
         gestures, particles = GestureEngine(posture_effects=False), ParticleSystem()
+        taco_rain = TacoRain()
         smoother = PredictionSmoother()
         reaction = ExpressionCue()
         use_observation = emotion is not None and emotion.needs_observation
@@ -128,7 +101,6 @@ def main():
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 540)
         count = 0
         label = None
-        score_history = deque(maxlen=smoother.history.maxlen)
         last_predict, last_event_at = -1., -10.
         last_event, event_origin = None, (0, 0)
         video_fps = cap.get(cv2.CAP_PROP_FPS) if args.video else 0
@@ -136,7 +108,6 @@ def main():
             video_fps = 25
         pending_record = args.record
         last_face_y, last_face_at = None, -10.
-        show_help = True
         fullscreen = not args.windowed
         title = 'LeBron Lab - VC P5'
         if not args.headless:
@@ -161,23 +132,19 @@ def main():
                 bbox = expression_cropper.detect(frame)
             if bbox is None:
                 smoother.reset()
-                score_history.clear()
                 label = None
             elif emotion is not None and now - last_predict >= .15:
                 x, y, w, h = bbox
                 crop = frame[y:y+h, x:x+w]
                 if crop.size:
                     if use_observation and observation is not None:
-                        predicted, scores = emotion.predict_observation(observation, include_scores=True)
+                        predicted, _ = emotion.predict_observation(observation, include_scores=True)
                     else:
-                        predicted, scores = emotion.predict(crop, include_scores=True)
+                        predicted, _ = emotion.predict(crop, include_scores=True)
                     if predicted is not None:
                         label, _ = smoother.update(predicted, None)
-                        if scores is not None:
-                            score_history.append(scores)
                     else:
                         smoother.reset()
-                        score_history.clear()
                         label = None
                 last_predict = now
             detected_hands = hands.detect(frame, now) if hands is not None else []
@@ -191,9 +158,6 @@ def main():
                 last_face_y, last_face_at = face_y, now
             elif now - last_face_at <= .3:
                 face_y = last_face_y
-            draw_expression_scores(frame, smoother.history, score_history, label, expression_names)
-            if show_help:
-                draw_hand_feedback(frame, detected_hands)
             cue = reaction.update(label if observation is not None else None)
             events = gestures.update(detected_hands, face_y, now, hands.poses if hands is not None else None)
             if events:
@@ -206,29 +170,18 @@ def main():
             elif cue is not None:
                 audio.play(cue)
             particles.draw(frame, now)
-            if now - last_event_at < 1.2:
-                if last_event == 'shot':
-                    draw_ball(frame, event_origin, now - last_event_at)
-                text(frame, 'TALCO!' if last_event == 'chalk' else 'TIRO!', 125, (70, 230, 255))
-            audio_status = 'Audio no disponible' if not audio.available else ('Audio OFF' if audio.muted else 'Audio ON')
-            if show_help:
-                panel_top = max(0, frame.shape[0] - 80)
-                panel = frame[panel_top:, :610]
-                shade = np.full_like(panel, (24, 20, 32))
-                panel[:] = cv2.addWeighted(shade, .75, panel, .25, 0)
-                text(frame, 'LEBRON | F Pantalla | H Ayuda | R Grabar | M Audio | Q Salir', panel_top + 21)
-                expression = expression_names.get(label, 'En espera')
-                if observation is None:
-                    expression = 'Mira a la camara'
-                text(frame, f'{expression} | {audio_status} | Manos {len(detected_hands)}/2', panel_top + 44, (100, 240, 240))
-                text(frame, gestures.status if detected_hands else 'Tiro: sube una mano | Talco: sube ambas y abre las palmas', panel_top + 67)
-            for i, notice in enumerate(notices):
-                text(frame, notice, frame.shape[0] - (96 if show_help else 18) - 20*i, (80, 190, 255))
+            if now - last_event_at < 1.2 and last_event == 'shot':
+                draw_ball(frame, event_origin, now - last_event_at)
+            if label == 'sad':
+                apply_sad_grayscale(frame)
+            taco_rain.draw(frame, now, active=(label == 'surprise'))
+            if label == 'surprise':
+                draw_taco_tuesday(frame, observation, now)
+            draw_predominant_emotion(frame, label, expression_names)
             if pending_record is not None:
                 recorder = DemoRecorder(pending_record, (frame.shape[1], frame.shape[0]), now)
                 pending_record = None
             if recorder is not None:
-                text(frame, 'REC (video sin audio, max 30s)', 23, (90, 90, 255))
                 if not recorder.write(frame, now):
                     print(f'Grabación guardada: {recorder.path}')
                     recorder = None
@@ -244,8 +197,6 @@ def main():
             if key == ord('f'):
                 fullscreen = not fullscreen
                 cv2.setWindowProperty(title, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN if fullscreen else cv2.WINDOW_NORMAL)
-            elif key == ord('h'):
-                show_help = not show_help
             elif key == ord('m'):
                 audio.toggle()
             elif key == ord('r'):
