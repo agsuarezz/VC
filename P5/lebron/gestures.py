@@ -55,6 +55,22 @@ def extended_fingers(hand):
     return tuple(extended)
 
 
+def taco_grip(hand, aspect):
+    """Pulgar opuesto a varios dedos curvados con hueco para sujetar el taco."""
+    points = hand * np.array((1., 1. / aspect, 1.))
+    scale = np.linalg.norm(points[0] - points[9])
+    if scale < 1e-5:
+        return False
+    curled = 0
+    for base in (5, 9, 13, 17):
+        joints = points[base:base+4]
+        length = np.linalg.norm(np.diff(joints, axis=0), axis=1).sum()
+        reach = np.linalg.norm(joints[-1] - joints[0])
+        curled += .23 * length < reach < .94 * length
+    gap = np.linalg.norm(points[4] - points[[8, 12]].mean(axis=0)) / scale
+    return curled >= 2 and .23 < gap < 1.22
+
+
 def open_palm(hand):
     return sum(extended_fingers(hand)) >= 3
 

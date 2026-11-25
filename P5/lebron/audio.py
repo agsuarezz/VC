@@ -61,6 +61,10 @@ class AudioPlayer:
                 if not path.is_file():
                     _write_effect(path, event)
                 self._paths[event] = path
+            for event, name in [('happy', 'sunshine'), ('sad', 'lebron_lebron'), ('angry', 'pu_pu_pu')]:
+                clip = directory / f'{name}.wav'
+                if clip.is_file():
+                    self._paths[event] = clip
             try:
                 import winsound
                 self._winsound = winsound

@@ -1,8 +1,19 @@
 # Dataset, entrenamiento y evaluación
 
+## Reentrenamiento con FER2013
+
+Se usó el CSV de FER2013 con las particiones originales `Training`, `PublicTest` y `PrivateTest`, reservadas para ajuste, validación y prueba, respectivamente. Se conservaron las cinco etiquetas del filtro y se retiraron 1.446 duplicados exactos dando prioridad a prueba y validación. FER2013 carece de identificadores de persona. Pueden quedar sujetos compartidos y fotos casi duplicadas. [Competición original de Kaggle](https://www.kaggle.com/c/challenges-in-representation-learning-facial-expression-recognition-challenge/data) · [Copia del CSV usada](https://www.kaggle.com/datasets/deadskull7/fer2013).
+
+El modelo usa los mismos 128 rasgos de MediaPipe que V3. Se comparan regresión logística y árboles con boosting, variando la regularización, el número de hojas y las etapas. Entre los candidatos a menos de dos puntos de F1 macro del mejor en validación se elige el de menor brecha absoluta de F1 entre ajuste y validación. El informe desglosa la cobertura del detector y compara ambos modelos sobre las mismas fotos de prueba con rasgos disponibles.
+
+```powershell
+python scripts/prepare_dataset.py --dataset fer2013 --source data/fer2013.csv --output data/fer2013.npz
+python scripts/train_fer2013.py --data data/fer2013.npz --destination data/fer2013_run
+```
+
 ## Versión 3 · JAFFE y WSEFEP
 
-La versión activa añade el Warsaw Set of Emotional Facial Expression Pictures de Olszanowski y colaboradores, con 210 fotografías posadas de 30 personas. Se conservan alegría, tristeza, enfado, sorpresa y neutral. Las etiquetas y los identificadores de persona proceden de la hoja incluida en el archivo oficial. Una foto indicada en la hoja faltaba en el ZIP y se contabilizó como descartada. WSEFEP se ofrece para investigación científica no comercial. Las imágenes, recortes y datos de rasgos quedan fuera del paquete. [Página de los autores y condiciones](https://www.rcbbsb.com/wsefep) · [Archivo del proyecto en OSF](https://osf.io/7xgz9/).
+La versión 3 añade el Warsaw Set of Emotional Facial Expression Pictures de Olszanowski y colaboradores, con 210 fotografías posadas de 30 personas. Se conservan alegría, tristeza, enfado, sorpresa y neutral. Las etiquetas y los identificadores de persona proceden de la hoja incluida en el archivo oficial. Una foto indicada en la hoja faltaba en el ZIP y se contabilizó como descartada. WSEFEP se ofrece para investigación científica no comercial. Las imágenes, recortes y datos de rasgos quedan fuera del paquete. [Página de los autores y condiciones](https://www.rcbbsb.com/wsefep) · [Archivo del proyecto en OSF](https://osf.io/7xgz9/).
 
 La semilla 431 reserva ocho personas de WSEFEP para el test de esta versión. Se conservan también los dos sujetos históricos de JAFFE. Las otras 30 personas aportan 231 fotos de desarrollo. En cuatro particiones de validación se mantienen juntas todas las fotos y variantes de cada persona. Solo las fotos de ajuste reciben copias reflejadas y cambios de luz y nitidez. Se comparan movimientos faciales solos o combinados con geometría, kernel lineal o RBF, cuatro valores de C y entrenamiento con o sin variantes. Venció la SVM lineal con C=0,1 y 128 rasgos, con F1 macro de validación 0,825. El ajuste final usa 693 ejemplos contando las copias.
 

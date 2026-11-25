@@ -1,5 +1,6 @@
 """Filtro LeBron con barba, corona, sonidos por expresión, tiro y talco."""
 import argparse
+from collections import Counter, deque
 from datetime import datetime
 from pathlib import Path
 import sys
@@ -17,7 +18,7 @@ def arguments():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--camera', type=int, default=0)
     parser.add_argument('--video', type=Path, help='Vídeo de entrada para probar sin webcam')
-    parser.add_argument('--model', type=Path, default=ROOT / 'models/emotion.joblib')
+    parser.add_argument('--model', type=Path, default=ROOT / 'models/emotion_fer2013.joblib')
     parser.add_argument('--headless', action='store_true', help='Procesar vídeo sin ventana')
     parser.add_argument('--max-frames', type=int, default=0)
     parser.add_argument('--record', type=Path, help='Grabar desde el primer fotograma, máximo 30s')
@@ -28,6 +29,30 @@ def arguments():
 
 def text(frame, message, y, color=(240, 240, 240)):
     cv2.putText(frame, message, (14, y), cv2.FONT_HERSHEY_SIMPLEX, .5, color, 1, cv2.LINE_AA)
+
+
+def draw_expression_scores(frame, history, score_history, active, names):
+    votes = Counter(label for label, _ in history)
+    title = 'Emocion activa: ' + names.get(active, 'en espera')
+    metric = 'Votos recientes'
+    if score_history:
+        metric = 'Puntuaciones del modelo'
+        scores = '  |  '.join(
+            f'{name} {sum(sample[label] for sample in score_history) / len(score_history):.1%}'
+            for label, name in names.items())
+    elif votes:
+        scores = '  |  '.join(f'{name} {votes[label] / len(history):.0%}' for label, name in names.items())
+    else:
+        scores = 'Muestra el rostro para ver las cinco expresiones'
+    lines = (title + '  /  ' + metric, scores)
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    width = max(cv2.getTextSize(line, font, .5, 1)[0][0] for line in lines)
+    panel = frame[:49, :width + 28]
+    shade = np.full_like(panel, (24, 20, 32))
+    cv2.addWeighted(shade, .76, panel, .24, 0, dst=panel)
+    scale = .5 * min(1., max(1, frame.shape[1] - 28) / width)
+    for line, y, color in zip(lines, (18, 39), ((100, 240, 240), (245, 245, 245))):
+        cv2.putText(frame, line, (14, y), font, scale, color, 1, cv2.LINE_AA)
 
 
 def draw_hand_feedback(frame, hands):
@@ -58,16 +83,19 @@ def main():
     if args.headless and not args.video:
         print('--headless requiere --video; no se abre la webcam sin vista previa.', file=sys.stderr)
         return 2
-    from lebron.visuals import FaceTracker, draw_lebron_filter
+    from lebron.visuals import FaceTracker, draw_lebron_filter, draw_sun, draw_taco
+    from lebron.gestures import taco_grip
     from lebron.gestures import HandTracker, GestureEngine, ParticleSystem
     from lebron.audio import AudioPlayer, EXPRESSION_SOUNDS
     from lebron.emotion import EmotionModel, ExpressionFaceCropper
 
+    expression_names = {label: name for label, (name, _) in EXPRESSION_SOUNDS.items()}
+    expression_names['neutral'] = 'Neutral'
     face = hands = cap = audio = recorder = emotion = None
     notices = []
     try:
         try:
-            face = FaceTracker(ROOT / 'models/face_landmarker.task')
+            face = FaceTracker(ROOT / 'models/face_landmarker.task', video=True)
         except Exception as exc:
             notices.append('Sin landmarks faciales: ejecuta scripts/download_models.py')
             print(f'No se pudo iniciar landmarks faciales: {exc}\nEjecuta python scripts/download_models.py', file=sys.stderr)
@@ -101,6 +129,7 @@ def main():
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 540)
         count = 0
         label = None
+        score_history = deque(maxlen=smoother.history.maxlen)
         last_predict, last_event_at = -1., -10.
         last_event, event_origin = None, (0, 0)
         video_fps = cap.get(cv2.CAP_PROP_FPS) if args.video else 0
@@ -133,30 +162,41 @@ def main():
                 bbox = expression_cropper.detect(frame)
             if bbox is None:
                 smoother.reset()
+                score_history.clear()
                 label = None
             elif emotion is not None and now - last_predict >= .15:
                 x, y, w, h = bbox
                 crop = frame[y:y+h, x:x+w]
                 if crop.size:
                     if use_observation and observation is not None:
-                        predicted, score = emotion.predict_observation(observation)
+                        predicted, scores = emotion.predict_observation(observation, include_scores=True)
                     else:
-                        predicted, score = emotion.predict(crop)
+                        predicted, scores = emotion.predict(crop, include_scores=True)
                     if predicted is not None:
-                        label, _ = smoother.update(predicted, score)
+                        label, _ = smoother.update(predicted, None)
+                        if scores is not None:
+                            score_history.append(scores)
                     else:
                         smoother.reset()
+                        score_history.clear()
                         label = None
                 last_predict = now
             detected_hands = hands.detect(frame, now) if hands is not None else []
             face_y = None
             if observation is not None:
+                if label == 'happy':
+                    draw_sun(frame, observation)
                 draw_lebron_filter(frame, observation)
                 _, y, _, h = observation.bbox
                 face_y = (y + h / 2) / frame.shape[0]
                 last_face_y, last_face_at = face_y, now
             elif now - last_face_at <= .3:
                 face_y = last_face_y
+            draw_expression_scores(frame, smoother.history, score_history, label, expression_names)
+            for hand in detected_hands:
+                if taco_grip(hand, frame.shape[1] / frame.shape[0]):
+                    draw_taco(frame, hand)
+                    text(frame, 'TACO TUESDAY!', 58, (60, 182, 245))
             if show_help:
                 draw_hand_feedback(frame, detected_hands)
             cue = reaction.update(label if observation is not None else None)
@@ -182,7 +222,7 @@ def main():
                 shade = np.full_like(panel, (24, 20, 32))
                 panel[:] = cv2.addWeighted(shade, .75, panel, .25, 0)
                 text(frame, 'LEBRON | F Pantalla | H Ayuda | R Grabar | M Audio | Q Salir', panel_top + 21)
-                expression = EXPRESSION_SOUNDS[label][0] if label in EXPRESSION_SOUNDS else ('Neutral' if label == 'neutral' else 'En espera')
+                expression = expression_names.get(label, 'En espera')
                 if observation is None:
                     expression = 'Mira a la camara'
                 text(frame, f'{expression} | {audio_status} | Manos {len(detected_hands)}/2', panel_top + 44, (100, 240, 240))

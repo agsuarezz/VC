@@ -114,7 +114,7 @@ class EmotionModel:
         if set(self.classes) != set(LABELS):
             raise ValueError("El modelo no contiene las cinco clases esperadas")
 
-    def predict(self, face_bgr):
+    def predict(self, face_bgr, *, include_scores=False):
         if self.feature_type != 'hog':
             if self._extractor is None:
                 self._extractor = BlendshapeExtractor(self._model_path)
@@ -128,10 +128,9 @@ class EmotionModel:
             features = values.reshape(1, -1)
         else:
             features = extract_hog(face_bgr).reshape(1, -1)
-        # Expose the SVM decision, not an uncalibrated pseudo-probability.
-        return str(self.pipeline.predict(features)[0]), None
+        return self._predict_features(features, include_scores)
 
-    def predict_observation(self, observation):
+    def predict_observation(self, observation, *, include_scores=False):
         if observation is None or getattr(observation, 'blendshapes', None) is None:
             return None, None
         features = np.asarray(observation.blendshapes, dtype=np.float32)
@@ -145,7 +144,14 @@ class EmotionModel:
             features = np.concatenate((features,geometry_vector(observation.landmarks,aspect)))
         elif self.feature_type != 'blendshapes':
             raise ValueError('El modelo HOG necesita predict(recorte)')
-        return str(self.pipeline.predict(features.reshape(1, -1))[0]), None
+        return self._predict_features(features.reshape(1, -1), include_scores)
+
+    def _predict_features(self, features, include_scores):
+        if include_scores and hasattr(self.pipeline, 'predict_proba'):
+            probabilities = self.pipeline.predict_proba(features)[0]
+            scores = dict(zip(self.classes, probabilities))
+            return str(max(scores, key=scores.get)), scores
+        return str(self.pipeline.predict(features)[0]), None
 
     def close(self):
         if self._extractor is not None:

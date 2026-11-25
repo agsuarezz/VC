@@ -1,9 +1,20 @@
 # LeBron Lab & Arte Generativo Facial · práctica 5 · versión 5
 
-Aplicación local para Windows con webcam que reúne los **dos prototipos** de la Práctica 5:
+Aplicación local para Windows con webcam para la Práctica 5:
 
 1. **Prototipo 1 — LeBron Lab (`app.py` / `iniciar.bat`):** barba y corona sobre el rostro, clasificador de expresiones entrenado para la práctica y gestos de baloncesto con audio.
 2. **Prototipo 2 — Arte Generativo Facial (`app_arte.py` / `iniciar_arte.bat`):** lienzo visual reactivo inspirado en *Más Que la Cara* (Zach Lieberman) que transforma tus landmarks 3D y `blendshapes` en gráficos en tiempo real con 3 modos artísticos.
+
+## Hechizos animales
+
+Ejecuta `iniciar_mago.bat`. Deja solo el índice extendido y dibuja una figura grande en el aire. Vuelve al punto inicial y baja el dedo para preparar otro hechizo. También puedes bajar el dedo para terminar un trazo abierto y ver el efecto de fallo.
+
+- Círculo → conejo lunar
+- Cuadrado → oso del bosque
+- Triángulo → zorro de fuego
+- Trazo irreconocible → rasgos mezclados
+
+Pulsa **C** para quitar la transformación, **R** para iniciar o detener una grabación de hasta 30 segundos y **Q** para salir. Puedes usar este filtro como segundo prototipo junto a LeBron.
 
 ## Abrir
 
@@ -84,14 +95,20 @@ Controles específicos de `app_arte.py`: `1`/`2`/`3` (o guiño) cambian de modo,
 python app_arte.py --video TU_VIDEO.avi --headless --max-frames 60 --record recordings/prueba_arte.avi
 ```
 
-## Entrenamiento mejorado
+## Entrenamiento con FER2013
+
+El filtro abre por defecto el modelo de FER2013. Se ajustó con 20.388 fotos con rasgos faciales disponibles y logró 67,6 % de acierto frente al 44,5 % de V3 en las mismas 2.689 fotos de prueba con rasgos disponibles. La prueba mide clasificación en FER2013. El resultado en webcam queda por medir. [Método](docs/DATASET.md) · [Métricas](reports/metrics_fer2013.json).
+
+Para abrir V3, usa `iniciar.bat --model models/emotion.joblib`.
+
+## Entrenamiento previo con JAFFE y WSEFEP
 
 | Evaluación | V2 | V3 |
 |---|---:|---:|
 | WSEFEP, 40 fotos de ocho personas reservadas | 22/40 (55,0 %) | **33/40 (82,5 %)** |
 | JAFFE histórico, 30 fotos de dos personas | 20/30 (66,7 %) | 20/30 (66,7 %) |
 
-La SVM de la V3 aprende de JAFFE y WSEFEP, con **231 fotos reales de 30 personas** en desarrollo. Los rasgos combinan movimientos y geometría de MediaPipe. La selección por personas eligió usar copias reflejadas y con iluminación y nitidez modificadas durante el ajuste. El modelo final usa 693 ejemplos contando las copias. La webcam utiliza el modelo nuevo automáticamente. El resultado de WSEFEP se mide en fotos posadas y el rendimiento con webcam está por medir.
+La SVM de la V3 aprende de JAFFE y WSEFEP, con **231 fotos reales de 30 personas** en desarrollo. Los rasgos combinan movimientos y geometría de MediaPipe. La selección por personas eligió usar copias reflejadas y con iluminación y nitidez modificadas durante el ajuste. El modelo final usa 693 ejemplos contando las copias. El resultado de WSEFEP se mide en fotos posadas y el rendimiento con webcam está por medir.
 
 `models/emotion_v2.joblib` permite recuperar la V2 con `--model models/emotion_v2.joblib`. Las condiciones de uso, los comandos de reproducción y las métricas por clase están en [docs/DATASET.md](docs/DATASET.md).
 
