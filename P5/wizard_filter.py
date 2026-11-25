@@ -420,8 +420,88 @@ def _draw_doctor_strange(frame, points, right, up, scale, now):
     _add_glow_layer(frame, front_glow, weight=0.88, blur_sigma=5.0)
 
 
+_SHARINGAN_SPRITE = None
+
+
+def _build_sharingan_sprite(size=160):
+    """Construye un sprite BGRA de alta resolución de un iris Sharingan con 3 tomoe curvos."""
+    c = (size - 1) / 2.0
+    r_max = size * 0.46
+    yy, xx = np.mgrid[0:size, 0:size].astype(np.float32)
+    dx, dy = (xx - c) / r_max, (yy - c) / r_max
+    dist = np.hypot(dx, dy)
+    theta = np.arctan2(dy, dx)
+
+    sprite = np.zeros((size, size, 4), dtype=np.uint8)
+    inside = dist <= 1.0
+
+    # Gradiente radial carmesí con fibras sutiles del iris y anillo limbal oscuro
+    fibers = 10.0 * np.sin(24.0 * theta) + 6.0 * np.cos(15.0 * theta + 0.7)
+    rim_shade = np.clip((dist - 0.74) / 0.26, 0.0, 1.0) ** 1.6
+    inner_glow = np.exp(-((dist - 0.42) / 0.24) ** 2) * 28.0
+
+    red = np.clip(218.0 + inner_glow + fibers - 175.0 * rim_shade, 18.0, 255.0)
+    green = np.clip(20.0 + inner_glow * 0.45 + fibers * 0.2 - 14.0 * rim_shade, 6.0, 90.0)
+    blue = np.clip(24.0 + inner_glow * 0.35 - 12.0 * rim_shade, 8.0, 90.0)
+
+    sprite[inside, 0] = blue[inside].astype(np.uint8)
+    sprite[inside, 1] = green[inside].astype(np.uint8)
+    sprite[inside, 2] = red[inside].astype(np.uint8)
+    # Borde alfa suavizado en el perímetro del iris
+    alpha = np.clip((1.0 - dist) * (r_max * 0.45), 0.0, 1.0)
+    sprite[:, :, 3] = np.rint(alpha * 255.0).astype(np.uint8)
+
+    ci = int(round(c))
+    # Borde limbal negro fino
+    cv2.circle(sprite, (ci, ci), int(round(r_max * 0.97)), (12, 8, 22, 255),
+               max(2, int(round(size * 0.032))), cv2.LINE_AA)
+    # Anillo interior característico del Sharingan
+    inner_r = r_max * 0.56
+    cv2.circle(sprite, (ci, ci), int(round(inner_r)), (12, 10, 16, 255),
+               max(2, int(round(size * 0.022))), cv2.LINE_AA)
+    # Pupila negra central con micro-borde carmesí brillante
+    cv2.circle(sprite, (ci, ci), int(round(r_max * 0.24)), (32, 34, 252, 255),
+               max(1, int(round(size * 0.015))), cv2.LINE_AA)
+    cv2.circle(sprite, (ci, ci), int(round(r_max * 0.21)), (8, 6, 12, 255), -1, cv2.LINE_AA)
+
+    # 3 tomoe con cabeza redonda y cola curvada siguiendo el arco del anillo
+    head_r = r_max * 0.125
+    for k in range(3):
+        base_a = k * (2.0 * math.pi / 3.0)
+        hx = c + inner_r * math.cos(base_a)
+        hy = c + inner_r * math.sin(base_a)
+        cv2.circle(sprite, (int(round(hx)), int(round(hy))),
+                   max(2, int(round(head_r))), (8, 6, 12, 255), -1, cv2.LINE_AA)
+
+        outer_pts, inner_pts = [], []
+        steps = 10
+        for s in range(steps + 1):
+            frac = s / float(steps)
+            ang = base_a + frac * 0.78  # ~45 grados de cola curvada
+            # La cola se estrecha suavemente hasta una punta fina ligeramente inclinada hacia dentro
+            half_w = head_r * (1.0 - frac) ** 1.15
+            radial = inner_r + head_r * 0.12 * math.sin(frac * math.pi) - head_r * 0.20 * frac
+            outer_pts.append((c + (radial + half_w) * math.cos(ang),
+                              c + (radial + half_w) * math.sin(ang)))
+            inner_pts.append((c + (radial - half_w) * math.cos(ang),
+                              c + (radial - half_w) * math.sin(ang)))
+        tail_poly = np.rint(outer_pts + inner_pts[::-1]).astype(np.int32)
+        cv2.fillPoly(sprite, [tail_poly], (8, 6, 12, 255), cv2.LINE_AA)
+
+    # Recortar cualquier trazo que se salga del círculo del iris
+    sprite[:, :, 3] = np.minimum(sprite[:, :, 3], np.rint(alpha * 255.0).astype(np.uint8))
+    return sprite
+
+
+def _get_sharingan_sprite():
+    global _SHARINGAN_SPRITE
+    if _SHARINGAN_SPRITE is None:
+        _SHARINGAN_SPRITE = _build_sharingan_sprite(160)
+    return _SHARINGAN_SPRITE
+
+
 def _draw_eye_iris(frame, points, ring_ids, iris_idx, mode, now):
-    """Dibuja iris personalizados (Super Saiyan o Sharingan) recortados al contorno real del ojo."""
+    """Dibuja iris personalizados (Super Saiyan o Sharingan HD) recortados al contorno real del ojo."""
     h, w = frame.shape[:2]
     ring = np.rint(points[list(ring_ids)]).astype(np.int32)
     x, y, bw, bh = cv2.boundingRect(ring)
@@ -437,41 +517,47 @@ def _draw_eye_iris(frame, points, ring_ids, iris_idx, mode, now):
     else:
         center = points[list(ring_ids)].mean(axis=0)
     cx, cy = float(center[0]) - x0, float(center[1]) - y0
-    radius = max(3, int(round(min(bw * 0.27, max(bh * 0.52, bw * 0.19)))))
-
+    roi_w, roi_h = x1 - x0, y1 - y0
     roi = frame[y0:y1, x0:x1]
     overlay = roi.copy()
-    mask = np.zeros((y1 - y0, x1 - x0), dtype=np.uint8)
+    mask = np.zeros((roi_h, roi_w), dtype=np.uint8)
     cv2.fillPoly(mask, [ring - np.array((x0, y0), dtype=np.int32)], 255, cv2.LINE_AA)
 
     ic = (int(round(cx)), int(round(cy)))
     if mode == 'saiyan':
+        radius = max(3, int(round(min(bw * 0.27, max(bh * 0.52, bw * 0.19)))))
         cv2.circle(overlay, ic, radius, (205, 240, 80), -1, cv2.LINE_AA)
         cv2.circle(overlay, ic, radius, (110, 165, 35), 1, cv2.LINE_AA)
         cv2.circle(overlay, ic, max(1, int(round(radius * 0.42))), (25, 45, 25), -1, cv2.LINE_AA)
         cv2.circle(overlay, (ic[0] - max(1, radius // 3), ic[1] - max(1, radius // 3)),
                    max(1, radius // 4), (255, 255, 240), -1, cv2.LINE_AA)
         alpha_strength = 0.85
-    else:  # Sharingan
-        cv2.circle(overlay, ic, radius, (24, 24, 215), -1, cv2.LINE_AA)
-        cv2.circle(overlay, ic, max(2, int(round(radius * 0.82))), (35, 35, 248), -1, cv2.LINE_AA)
-        cv2.circle(overlay, ic, radius, (15, 12, 35), max(1, radius // 6), cv2.LINE_AA)
-        inner_r = max(2, int(round(radius * 0.56)))
-        cv2.circle(overlay, ic, inner_r, (18, 12, 22), 1, cv2.LINE_AA)
-        cv2.circle(overlay, ic, max(1, int(round(radius * 0.25))), (12, 10, 14), -1, cv2.LINE_AA)
-        # 3 tomoe girando sobre el anillo interior
-        tomoe_r = max(1, int(round(radius * 0.17)))
-        for k in range(3):
-            a = now * 2.4 + k * (2.0 * math.pi / 3.0)
-            tx = int(round(cx + inner_r * math.cos(a)))
-            ty = int(round(cy + inner_r * math.sin(a)))
-            cv2.circle(overlay, (tx, ty), tomoe_r, (10, 8, 12), -1, cv2.LINE_AA)
-            tail = (int(round(tx - tomoe_r * 1.4 * math.sin(a))),
-                    int(round(ty + tomoe_r * 1.4 * math.cos(a))))
-            cv2.line(overlay, (tx, ty), tail, (10, 8, 12), max(1, tomoe_r), cv2.LINE_AA)
-        cv2.circle(overlay, (ic[0] - max(1, radius // 3), ic[1] - max(1, radius // 3)),
-                   max(1, radius // 5), (245, 245, 255), -1, cv2.LINE_AA)
-        alpha_strength = 0.92
+    else:  # Sharingan HD supersampleado con rotación suave de los 3 tomoe
+        radius = max(4, int(round(min(bw * 0.31, max(bh * 0.58, bw * 0.23)))))
+        sprite = _get_sharingan_sprite()
+        src_c = (sprite.shape[1] - 1) / 2.0
+        scale_f = (radius * 2.15) / float(sprite.shape[1])
+        angle_deg = -(math.degrees(now * 2.1) % 360.0)
+        mat = cv2.getRotationMatrix2D((src_c, src_c), angle_deg, scale_f)
+        mat[0, 2] += cx - src_c
+        mat[1, 2] += cy - src_c
+        warped = cv2.warpAffine(
+            sprite, mat, (roi_w, roi_h),
+            flags=cv2.INTER_AREA if scale_f < 1.0 else cv2.INTER_LINEAR,
+            borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0, 0),
+        )
+        # Sombra sutil del párpado superior para profundidad 3D
+        yy = np.linspace(0.0, 1.0, roi_h, dtype=np.float32)[:, None]
+        lid_shade = np.clip(0.72 + 0.35 * (yy / 0.45), 0.72, 1.0)[..., None]
+        iris_bgr = np.clip(warped[:, :, :3].astype(np.float32) * lid_shade, 0, 255)
+        iris_a = (warped[:, :, 3:4].astype(np.float32) / 255.0)
+        overlay = np.clip(overlay * (1.0 - iris_a) + iris_bgr * iris_a, 0, 255).astype(np.uint8)
+        # Reflejos especulares fijos (luz desde arriba a la izquierda)
+        g1 = (int(round(cx - radius * 0.34)), int(round(cy - radius * 0.32)))
+        g2 = (int(round(cx + radius * 0.28)), int(round(cy + radius * 0.26)))
+        cv2.circle(overlay, g1, max(1, int(round(radius * 0.17))), (250, 250, 255), -1, cv2.LINE_AA)
+        cv2.circle(overlay, g2, max(1, int(round(radius * 0.08))), (210, 215, 255), -1, cv2.LINE_AA)
+        alpha_strength = 0.96
 
     alpha = (cv2.GaussianBlur(mask, (3, 3), 0).astype(np.float32) / 255.0 * alpha_strength)[..., None]
     roi[:] = np.clip(roi * (1.0 - alpha) + overlay * alpha, 0, 255).astype(np.uint8)
@@ -588,80 +674,168 @@ def _draw_super_saiyan(frame, points, right, up, scale, now):
     _add_glow_layer(frame, bolt_layer, weight=0.95, blur_sigma=4.0)
 
 
+def _crow_polygon(center, size, flap, tilt_rad, facing=1.0):
+    """Genera el polígono orgánico de un cuervo de genjutsu aleteando."""
+    cx, cy = float(center[0]), float(center[1])
+    cos_t, sin_t = math.cos(tilt_rad), math.sin(tilt_rad)
+    w_lift = flap * 0.58
+
+    pts = np.asarray([
+        (0.42, -0.05),                               # Punta del pico
+        (0.24, -0.14), (0.12, -0.16),                # Cabeza
+        (0.02, -0.08),
+        # Ala delantera con puntas de plumas
+        (-0.08, -0.32 - w_lift * 0.65),
+        (-0.42, -0.46 - w_lift * 0.95),
+        (-0.88, -0.26 - w_lift * 1.05),
+        (-0.68, -0.16 - w_lift * 0.72),
+        (-0.78, -0.04 - w_lift * 0.60),
+        (-0.56, 0.02 - w_lift * 0.38),
+        (-0.62, 0.12 - w_lift * 0.22),
+        (-0.26, 0.08),
+        # Cola en abanico
+        (-0.58, 0.24), (-0.52, 0.34), (-0.34, 0.32),
+        (-0.14, 0.16),
+        # Pecho y ala trasera
+        (0.08, 0.16),
+        (0.28, -0.22 - w_lift * 0.45),
+        (0.56, -0.30 - w_lift * 0.70),
+        (0.44, -0.08 - w_lift * 0.35),
+        (0.24, 0.06),
+        (0.28, -0.02),
+    ], dtype=np.float32) * size
+    pts[:, 0] *= facing
+    rx = pts[:, 0] * cos_t - pts[:, 1] * sin_t + cx
+    ry = pts[:, 0] * sin_t + pts[:, 1] * cos_t + cy
+    return np.rint(np.stack((rx, ry), axis=1)).astype(np.int32)
+
+
+def _draw_feather(frame, center, size, angle_rad):
+    """Dibuja una pluma negra curva con muesca suave."""
+    cx, cy = float(center[0]), float(center[1])
+    cos_a, sin_a = math.cos(angle_rad), math.sin(angle_rad)
+    raw = np.array([
+        (-1.0, 0.02), (-0.55, -0.24), (0.10, -0.26), (0.65, -0.14), (1.0, 0.0),
+        (0.58, 0.18), (0.12, 0.14), (0.04, 0.24), (-0.48, 0.22),
+    ], dtype=np.float32) * size
+    rx = raw[:, 0] * cos_a - raw[:, 1] * sin_a + cx
+    ry = raw[:, 0] * sin_a + raw[:, 1] * cos_a + cy
+    poly = np.rint(np.stack((rx, ry), axis=1)).astype(np.int32)
+    cv2.fillPoly(frame, [poly], (18, 13, 24), cv2.LINE_AA)
+
+
 def _draw_sharingan(frame, points, right, up, scale, now):
-    """Iris Sharingan con 3 tomoe giratorios, marcas místicas y aura oscura carmesí."""
+    """Sharingan HD con 3 tomoe giratorios, llamas negras Amaterasu y cuervos de genjutsu."""
     forehead = points[10]
     head_center = 0.5 * (forehead + points[152])
+    h, w = frame.shape[:2]
 
-    # 1) Ligero oscurecimiento dramático con tinte carmesí en el entorno
-    tint = np.full_like(frame, (28, 16, 54))
-    cv2.addWeighted(frame, 0.86, tint, 0.14, 0, dst=frame)
+    # 1) Atmósfera dramática oscura con sutil tinte carmesí
+    tint = np.full_like(frame, (24, 14, 48))
+    cv2.addWeighted(frame, 0.85, tint, 0.15, 0, dst=frame)
 
-    # 2) Aura oscura carmesí flamígera (estilo chakra / Susanoo) detrás de la cabeza
     def local(anchor, xy):
         coords = np.asarray(xy, dtype=np.float32)
         return np.rint(anchor + scale * (coords[..., :1] * right + coords[..., 1:] * up)).astype(np.int32)
 
-    aura = np.zeros_like(frame)
-    pulse = 1.0 + 0.06 * math.sin(now * 6.0)
-    for k in range(11):
-        frac = (k / 10.0) * 2.0 - 1.0
-        wobble = 0.18 * math.sin(now * 7.5 + k * 2.1)
-        bx = frac * 1.02
-        by = -1.05 + 0.30 * (1.0 - abs(frac))
-        peak = (1.55 - 0.28 * abs(frac) + wobble) * pulse
-        flame = local(head_center, [
+    # 2) Llamas oscuras de Amaterasu con borde rojo carmesí detrás de la cabeza y hombros
+    aura_glow = np.zeros_like(frame)
+    dark_flames = np.zeros((h, w), dtype=np.uint8)
+    pulse = 1.0 + 0.06 * math.sin(now * 6.5)
+    for k in range(13):
+        frac = (k / 12.0) * 2.0 - 1.0
+        wobble = 0.18 * math.sin(now * 8.0 + k * 2.1)
+        bx = frac * 1.08
+        by = -1.12 + 0.28 * (1.0 - abs(frac))
+        peak = (1.62 - 0.28 * abs(frac) + wobble) * pulse
+        sway = 0.12 * math.cos(now * 7.0 + k * 1.4)
+        flame_outer = local(head_center, [
             (bx - 0.30, by),
-            (bx - 0.16, by + peak * 0.55),
-            (bx + 0.10 * math.cos(now * 6.5 + k), by + peak),
-            (bx + 0.16, by + peak * 0.55),
+            (bx - 0.18, by + peak * 0.52),
+            (bx + sway, by + peak),
+            (bx + 0.18, by + peak * 0.52),
             (bx + 0.30, by),
         ])
-        color = (55, 18, 210) if k % 2 == 0 else (95, 22, 155)
-        cv2.fillPoly(aura, [flame], color, cv2.LINE_AA)
+        flame_inner = local(head_center, [
+            (bx - 0.17, by),
+            (bx - 0.10, by + peak * 0.45),
+            (bx + sway * 0.85, by + peak * 0.78),
+            (bx + 0.10, by + peak * 0.45),
+            (bx + 0.17, by),
+        ])
+        cv2.fillPoly(aura_glow, [flame_outer], (35, 18, 225) if k % 2 == 0 else (75, 18, 175), cv2.LINE_AA)
+        cv2.fillPoly(dark_flames, [flame_inner], 210, cv2.LINE_AA)
+
+    # Brasas carmesí ascendentes
     for i in range(18):
-        phase = (now * 0.85 + i * 0.23) % 1.0
-        side_off = math.sin(i * 2.4 + now * 1.5) * scale * 1.25
-        y_off = (-1.0 + phase * 2.45) * scale
+        phase = (now * 0.9 + i * 0.23) % 1.0
+        side_off = math.sin(i * 2.5 + now * 1.6) * scale * 1.38
+        y_off = (-1.05 + phase * 2.55) * scale
         pt = head_center + side_off * right + y_off * up
-        rad = max(2, int(round(scale * 0.06 * (1.0 - phase * 0.7))))
-        cv2.circle(aura, tuple(np.rint(pt).astype(int)), rad, (45, 30, 245), -1, cv2.LINE_AA)
+        rad = max(2, int(round(scale * 0.045 * (1.0 - phase * 0.7))))
+        cv2.circle(aura_glow, tuple(np.rint(pt).astype(int)), rad, (45, 35, 250), -1, cv2.LINE_AA)
 
     face_mask = _face_exclusion_mask(frame.shape, points)
-    h, w = frame.shape[:2]
-    small_aura = cv2.resize(aura, (max(1, w // 4), max(1, h // 4)), interpolation=cv2.INTER_AREA)
-    small_aura = cv2.GaussianBlur(small_aura, (0, 0), 5.0)
-    soft_aura = cv2.resize(small_aura, (w, h), interpolation=cv2.INTER_LINEAR)
     keep = (1.0 - face_mask.astype(np.float32) / 255.0)[..., None]
-    soft_aura = np.clip(soft_aura * keep, 0, 255).astype(np.uint8)
+
+    # Resplandor carmesí exterior
+    small_aura = cv2.resize(aura_glow, (max(1, w // 4), max(1, h // 4)), interpolation=cv2.INTER_AREA)
+    small_aura = cv2.GaussianBlur(small_aura, (0, 0), 4.8)
+    soft_aura = np.clip(cv2.resize(small_aura, (w, h), interpolation=cv2.INTER_LINEAR) * keep, 0, 255).astype(np.uint8)
     cv2.addWeighted(frame, 1.0, soft_aura, 0.92, 0, dst=frame)
 
-    # 3) Marcas místicas bajo los ojos y en la frente (estilo ninja/maldición)
+    # Núcleo negro de las llamas Amaterasu
+    small_dark = cv2.resize(dark_flames, (max(1, w // 4), max(1, h // 4)), interpolation=cv2.INTER_AREA)
+    small_dark = cv2.GaussianBlur(small_dark, (0, 0), 3.0)
+    dark_alpha = (cv2.resize(small_dark, (w, h), interpolation=cv2.INTER_LINEAR).astype(np.float32) / 255.0) * 0.62
+    dark_alpha = dark_alpha[..., None] * keep
+    frame[:] = np.clip(frame * (1.0 - dark_alpha) + np.array((16, 8, 22), dtype=np.float32) * dark_alpha,
+                       0, 255).astype(np.uint8)
 
-    mark_glow = np.zeros_like(frame)
-    for side in (-1.0, 1.0):
-        cheek = 0.55 * points[291 if side > 0 else 61] + 0.45 * points[454 if side > 0 else 234]
-        for row, dy in enumerate((0.12, 0.03, -0.06)):
-            seg = local(cheek, [(-side * 0.08, dy), (side * (0.18 - row * 0.03), dy - 0.04)])
-            cv2.line(frame, tuple(seg[0]), tuple(seg[1]), (25, 16, 48), 2, cv2.LINE_AA)
-            cv2.line(mark_glow, tuple(seg[0]), tuple(seg[1]), (40, 35, 225), 2, cv2.LINE_AA)
+    # 3) Bandada de cuervos negros de genjutsu (estilo Itachi) + plumas cayendo
+    fg_glow = np.zeros_like(frame)
+    crow_polys = []
+    for i in range(6):
+        ang = now * (0.72 + 0.14 * (i % 3)) + i * (2.0 * math.pi / 6.0)
+        rx = scale * (1.58 + 0.30 * math.sin(now * 1.1 + i * 1.9))
+        ry = scale * (1.20 + 0.22 * math.cos(now * 0.9 + i * 1.3))
+        pos = head_center + (rx * math.cos(ang)) * right + (ry * math.sin(ang) + scale * 0.18) * up
+        if np.linalg.norm(pos - head_center) < scale * 1.08:
+            continue
+        flap = math.sin(now * 9.5 + i * 1.8)
+        crow_size = scale * (0.24 + 0.07 * (i % 3))
+        facing = -1.0 if math.sin(ang) > 0 else 1.0
+        tilt_rad = 0.20 * math.cos(ang) * facing
+        poly = _crow_polygon(pos, crow_size, flap, tilt_rad, facing=facing)
+        crow_polys.append(poly)
+        cv2.polylines(fg_glow, [poly], True, (28, 12, 130), 2, cv2.LINE_AA)
 
-    # Sello místico en el centro de la frente
-    seal = local(forehead, [(0.0, -0.08), (0.06, -0.17), (0.0, -0.26), (-0.06, -0.17)])
-    cv2.fillPoly(frame, [seal], (25, 15, 75), cv2.LINE_AA)
-    cv2.polylines(frame, [seal], True, (50, 50, 245), 2, cv2.LINE_AA)
-    cv2.polylines(mark_glow, [seal], True, (45, 45, 255), 3, cv2.LINE_AA)
+    for i in range(9):
+        phase = (now * 0.40 + i * 0.15) % 1.0
+        side = -1.0 if i % 2 == 0 else 1.0
+        fx = side * (1.15 + 0.52 * ((i // 2) / 4.0) + 0.16 * math.sin(now * 2.2 + i)) * scale
+        fy = (1.55 - phase * 2.95) * scale
+        fpos = head_center + fx * right + fy * up
+        f_ang = 0.65 * math.sin(now * 2.8 + i * 1.4) + (0.45 if side > 0 else -0.45)
+        _draw_feather(frame, fpos, scale * (0.09 + 0.025 * (i % 3)), f_ang)
 
-    # 4) Iris Sharingan giratorios en ambos ojos
+    # 4) Ojos Sharingan HD giratorios + destello carmesí cinemático en los ojos
     _draw_eye_iris(frame, points, LEFT_EYE_RING, 468, 'sharingan', now)
     _draw_eye_iris(frame, points, RIGHT_EYE_RING, 473, 'sharingan', now)
 
-    # Pequeño destello rojo alrededor de los ojos
-    for eye_ring in (LEFT_EYE_RING, RIGHT_EYE_RING):
-        eye_center = points[list(eye_ring)].mean(axis=0)
-        cv2.circle(mark_glow, tuple(np.rint(eye_center).astype(int)),
-                   max(4, int(round(scale * 0.14))), (30, 25, 195), 2, cv2.LINE_AA)
-    _add_glow_layer(frame, mark_glow, weight=0.65, blur_sigma=4.0)
+    flare_pulse = 0.85 + 0.25 * math.sin(now * 5.0)
+    for eye_ring, iris_idx in ((LEFT_EYE_RING, 468), (RIGHT_EYE_RING, 473)):
+        ec = points[iris_idx] if len(points) > iris_idx else points[list(eye_ring)].mean(axis=0)
+        cv2.circle(fg_glow, tuple(np.rint(ec).astype(int)),
+                   max(4, int(round(scale * 0.13))), (25, 22, 215), 2, cv2.LINE_AA)
+        p0 = np.rint(ec - right * (scale * 0.24 * flare_pulse)).astype(int)
+        p1 = np.rint(ec + right * (scale * 0.24 * flare_pulse)).astype(int)
+        cv2.line(fg_glow, tuple(p0), tuple(p1), (45, 35, 245), 1, cv2.LINE_AA)
+    _add_glow_layer(frame, fg_glow, weight=0.65, blur_sigma=4.0)
+
+    # Siluetas negro azabache encima del halo para que los cuervos resalten nítidos
+    for poly in crow_polys:
+        cv2.fillPoly(frame, [poly], (14, 10, 18), cv2.LINE_AA)
 
 
 def _draw_anime_sweatdrop(frame, points, right, up, scale, now):
