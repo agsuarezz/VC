@@ -20,9 +20,9 @@ def draw_panel(frame, air):
     h, w = frame.shape[:2]
     font = cv2.FONT_HERSHEY_DUPLEX
     scale = min(1., w / 650)
-    status, color = SPELLS.get(air.spell, ('Traza tu primer hechizo', (223, 191, 249)))
+    status, color = SPELLS.get(air.spell, ('Traza tu primer poder', (223, 191, 249)))
     if air.points:
-        status, color = 'Trazando hechizo...', (250, 201, 255)
+        status, color = 'Canalizando poder...', (250, 201, 255)
     elif air.locked and air.cursor is not None:
         status = f'{status} | Baja el dedo para repetir'
     panel = frame[max(0, h-72):, :]
@@ -31,8 +31,8 @@ def draw_panel(frame, air):
     cv2.putText(frame, status, (16, h-46), font, .71 * scale, color, 1, cv2.LINE_AA)
     cv2.putText(frame, 'Dibuja con el indice y cierra la figura | Baja el dedo para repetir',
                 (16, h-26), font, .43 * scale, (241, 220, 245), 1, cv2.LINE_AA)
-    cv2.putText(frame, 'Circulo: conejo   Cuadrado: oso   Triangulo: zorro   |   R Grabar   C Limpiar   Q Salir',
-                (16, h-8), font, .42 * scale, (226, 186, 237), 1, cv2.LINE_AA)
+    cv2.putText(frame, 'Circulo: Doctor Strange   Cuadrado: Super Saiyan   Triangulo: Sharingan   |   R Grabar   C Limpiar   Q Salir',
+                (16, h-8), font, .40 * scale, (226, 186, 237), 1, cv2.LINE_AA)
 
 
 def main():
@@ -68,7 +68,7 @@ def main():
         air = AirSpell()
         count = 0
         requested_record = args.record
-        title = 'Hechizos animales - VC P5'
+        title = 'Power-Ups y Superheroes - VC P5'
         if not args.headless:
             cv2.namedWindow(title, cv2.WINDOW_NORMAL)
         vignette = None
@@ -94,7 +94,7 @@ def main():
                 vignette = (1 - .23 * np.minimum(1., x*x + y[:, None]**2))[..., None]
             frame = (frame * vignette).astype(np.uint8)
             if observation is not None:
-                draw_costume(frame, observation, air.spell)
+                draw_costume(frame, observation, air.spell, now)
             draw_magic(frame, air, now)
             draw_panel(frame, air)
             if requested_record:

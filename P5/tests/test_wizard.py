@@ -4,7 +4,18 @@ import unittest
 
 import numpy as np
 
-from wizard_filter import AirSpell, OneEuroFilter, draw_magic, pointing_tip
+from lebron.visuals import FaceObservation
+from wizard_filter import (
+    AirSpell,
+    LEFT_BROW,
+    LEFT_EYE_RING,
+    OneEuroFilter,
+    RIGHT_BROW,
+    RIGHT_EYE_RING,
+    draw_costume,
+    draw_magic,
+    pointing_tip,
+)
 
 
 def make_hand(tip_x=0.5, tip_y=0.4, extended=(True, False, False, False),
@@ -182,6 +193,38 @@ class WizardTrackingTests(unittest.TestCase):
         air.update([make_hand(0.52, 0.4)], (640, 480), 0.033)
         draw_magic(frame, air, 0.033)
         self.assertGreater(int(frame.sum()), 0)
+
+    def test_draw_costume_renders_all_powerups_and_animates(self):
+        lm = np.full((478, 3), 0.5, dtype=np.float32)
+        lm[10, :2] = (0.50, 0.28)
+        lm[152, :2] = (0.50, 0.72)
+        lm[234, :2] = (0.37, 0.50)
+        lm[454, :2] = (0.63, 0.50)
+        lm[61, :2] = (0.45, 0.62)
+        lm[291, :2] = (0.55, 0.62)
+        lm[33, :2] = (0.41, 0.46)
+        lm[263, :2] = (0.59, 0.46)
+        lm[468, :2] = (0.44, 0.46)
+        lm[473, :2] = (0.56, 0.46)
+        for idx, ang in zip(LEFT_EYE_RING, np.linspace(0, 2 * math.pi, len(LEFT_EYE_RING), endpoint=False)):
+            lm[idx, :2] = (0.44 + 0.032 * math.cos(ang), 0.46 + 0.018 * math.sin(ang))
+        for idx, ang in zip(RIGHT_EYE_RING, np.linspace(0, 2 * math.pi, len(RIGHT_EYE_RING), endpoint=False)):
+            lm[idx, :2] = (0.56 + 0.032 * math.cos(ang), 0.46 + 0.018 * math.sin(ang))
+        for i, idx in enumerate(LEFT_BROW):
+            lm[idx, :2] = (0.40 + 0.02 * i, 0.41 - 0.008 * math.sin(i * 0.8))
+        for i, idx in enumerate(RIGHT_BROW):
+            lm[idx, :2] = (0.60 - 0.02 * i, 0.41 - 0.008 * math.sin(i * 0.8))
+        obs = FaceObservation(bbox=(240, 120, 180, 220), landmarks=lm, frame_size=(640, 480))
+        base = np.full((480, 640, 3), (65, 70, 80), dtype=np.uint8)
+
+        for spell in (None, 'circle', 'square', 'triangle', 'failed'):
+            f1 = base.copy()
+            f2 = base.copy()
+            draw_costume(f1, obs, spell, now=0.2)
+            draw_costume(f2, obs, spell, now=0.9)
+            self.assertGreater(int(np.any(f1 != base, axis=2).sum()), 300, msg=f'spell={spell}')
+            if spell is not None:
+                self.assertFalse(np.array_equal(f1, f2), msg=f'spell={spell} should animate')
 
 
 if __name__ == '__main__':

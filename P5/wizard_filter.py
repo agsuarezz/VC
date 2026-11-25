@@ -6,11 +6,16 @@ import numpy as np
 
 
 SPELLS = {
-    'circle': ('Conejo lunar', (255, 205, 162)),
-    'square': ('Oso del bosque', (145, 218, 255)),
-    'triangle': ('Zorro de fuego', (105, 167, 255)),
-    'failed': ('Hechizo fallido', (250, 126, 255)),
+    'circle': ('Doctor Strange', (45, 165, 255)),
+    'square': ('Super Saiyan', (50, 228, 255)),
+    'triangle': ('Sharingan', (55, 55, 245)),
+    'failed': ('Power-Up fallido', (245, 195, 110)),
 }
+
+LEFT_EYE_RING = (33, 7, 163, 144, 145, 153, 154, 155, 133, 173, 157, 158, 159, 160, 161, 246)
+RIGHT_EYE_RING = (362, 382, 381, 380, 374, 373, 390, 249, 263, 466, 388, 387, 386, 385, 384, 398)
+LEFT_BROW = (70, 63, 105, 66, 107)
+RIGHT_BROW = (300, 293, 334, 296, 336)
 
 
 def classify_shape(points):
@@ -301,7 +306,400 @@ class AirSpell:
         self.locked = True
 
 
-def draw_costume(frame, observation, spell):
+def _face_exclusion_mask(frame_shape, points):
+    """Máscara de la silueta facial para que halos y mandalas queden detrás de la cabeza."""
+    h, w = frame_shape[:2]
+    mask = np.zeros((h, w), dtype=np.uint8)
+    hull = cv2.convexHull(np.rint(points[:468]).astype(np.int32))
+    cv2.fillConvexPoly(mask, hull, 255, cv2.LINE_AA)
+    return cv2.GaussianBlur(mask, (0, 0), 5.0)
+
+
+def _add_glow_layer(frame, layer, weight=0.9, blur_sigma=4.0, exclude_mask=None):
+    """Añade una capa luminosa con bloom suave (opcionalmente oculta tras la cara)."""
+    if blur_sigma > 0:
+        h, w = frame.shape[:2]
+        sw, sh = max(1, w // 3), max(1, h // 3)
+        small = cv2.resize(layer, (sw, sh), interpolation=cv2.INTER_AREA)
+        bloom = cv2.GaussianBlur(small, (0, 0), max(1.0, blur_sigma / 3.0))
+        bloom = cv2.resize(bloom, (w, h), interpolation=cv2.INTER_LINEAR)
+        combined = cv2.addWeighted(layer, 0.85, bloom, 1.05, 0)
+    else:
+        combined = layer
+    if exclude_mask is not None:
+        keep = (1.0 - exclude_mask.astype(np.float32) / 255.0)[..., None]
+        combined = np.clip(combined * keep, 0, 255).astype(np.uint8)
+    cv2.addWeighted(frame, 1.0, combined, weight, 0, dst=frame)
+
+
+def _draw_mandala(canvas, center, radius, angle, primary, bright, thickness=2):
+    """Dibuja un escudo/mandala rúnico giratorio estilo Doctor Strange."""
+    cx, cy = float(center[0]), float(center[1])
+    r = max(12.0, float(radius))
+    ri = int(round(r))
+    c_int = (int(round(cx)), int(round(cy)))
+
+    # Anillos exteriores y marcas rúnicas
+    cv2.circle(canvas, c_int, ri, primary, thickness, cv2.LINE_AA)
+    cv2.circle(canvas, c_int, max(4, int(round(r * 0.87))), primary, max(1, thickness - 1), cv2.LINE_AA)
+    cv2.circle(canvas, c_int, max(3, int(round(r * 0.52))), bright, max(1, thickness - 1), cv2.LINE_AA)
+
+    for i in range(16):
+        a = angle + i * (2.0 * math.pi / 16.0)
+        p0 = (int(round(cx + r * 0.87 * math.cos(a))), int(round(cy + r * 0.87 * math.sin(a))))
+        p1 = (int(round(cx + r * 0.99 * math.cos(a))), int(round(cy + r * 0.99 * math.sin(a))))
+        cv2.line(canvas, p0, p1, bright, max(1, thickness - 1), cv2.LINE_AA)
+        if i % 2 == 0:
+            dot = (int(round(cx + r * 0.93 * math.cos(a + math.pi / 16.0))),
+                   int(round(cy + r * 0.93 * math.sin(a + math.pi / 16.0))))
+            cv2.circle(canvas, dot, max(1, thickness), bright, -1, cv2.LINE_AA)
+
+    # Dos cuadrados superpuestos (estrella de 8 puntas de Kamar-Taj)
+    sq_r = r * 0.85
+    for offset in (0.0, math.pi / 4.0):
+        pts = np.array([
+            (int(round(cx + sq_r * math.cos(angle + offset + k * math.pi / 2.0))),
+             int(round(cy + sq_r * math.sin(angle + offset + k * math.pi / 2.0))))
+            for k in range(4)
+        ], dtype=np.int32)
+        cv2.polylines(canvas, [pts], True, bright, thickness, cv2.LINE_AA)
+
+    # Triángulos interiores girando en sentido contrario
+    tri_r = r * 0.50
+    for offset in (0.0, math.pi):
+        pts = np.array([
+            (int(round(cx + tri_r * math.cos(-angle * 1.4 + offset + k * 2.0 * math.pi / 3.0))),
+             int(round(cy + tri_r * math.sin(-angle * 1.4 + offset + k * 2.0 * math.pi / 3.0))))
+            for k in range(3)
+        ], dtype=np.int32)
+        cv2.polylines(canvas, [pts], True, primary, max(1, thickness - 1), cv2.LINE_AA)
+
+
+def _draw_doctor_strange(frame, points, right, up, scale, now):
+    """Mandalas rúnicos naranjas girando + Ojo de Agamotto y chispas arcanas."""
+    h, w = frame.shape[:2]
+    head_center = 0.5 * (points[10] + points[152])
+    primary = (22, 130, 255)
+    bright = (110, 220, 255)
+
+    # Gran mandala arcano detrás de la cabeza
+    back_glow = np.zeros_like(frame)
+    _draw_mandala(back_glow, head_center, scale * 1.52, now * 0.75, primary, bright, thickness=2)
+
+    # Chispas doradas orbitando el portal
+    for i in range(20):
+        a = now * 1.2 + i * (2.0 * math.pi / 20.0)
+        dist = scale * (1.58 + 0.14 * math.sin(now * 3.5 + i * 1.7))
+        sx = int(round(head_center[0] + dist * math.cos(a)))
+        sy = int(round(head_center[1] + dist * math.sin(a)))
+        tx = int(round(sx - 9 * math.sin(a)))
+        ty = int(round(sy + 9 * math.cos(a)))
+        cv2.line(back_glow, (sx, sy), (tx, ty), bright, 2, cv2.LINE_AA)
+
+    face_mask = _face_exclusion_mask(frame.shape, points)
+    _add_glow_layer(frame, back_glow, weight=0.95, blur_sigma=7.0, exclude_mask=face_mask)
+
+    # Dos mini-mandalas flotantes a ambos lados de la cabeza
+    front_glow = np.zeros_like(frame)
+    for side in (-1.0, 1.0):
+        side_center = head_center + scale * (side * 1.38 * right - 0.10 * up)
+        _draw_mandala(front_glow, side_center, scale * 0.42, -side * now * 1.4, primary, bright, thickness=2)
+
+    # Ojo de Agamotto en la base del cuello (debajo de la barbilla)
+    amulet = points[152] - scale * 0.36 * up
+    ax, ay = int(round(amulet[0])), int(round(amulet[1]))
+    arx, ary = max(6, int(round(scale * 0.24))), max(4, int(round(scale * 0.15)))
+    tilt = math.degrees(math.atan2(right[1], right[0]))
+    if 0 <= ax < w and 0 <= ay < h:
+        cv2.ellipse(frame, (ax, ay), (arx, ary), tilt, 0, 360, (32, 165, 225), -1, cv2.LINE_AA)
+        cv2.ellipse(frame, (ax, ay), (arx, ary), tilt, 0, 360, (18, 95, 160), 2, cv2.LINE_AA)
+        cv2.ellipse(frame, (ax, ay), (max(3, arx // 2), max(2, ary // 2)), tilt, 0, 360, (95, 235, 55), -1, cv2.LINE_AA)
+        cv2.ellipse(front_glow, (ax, ay), (max(4, int(arx * 0.65)), max(3, int(ary * 0.65))),
+                    tilt, 0, 360, (35, 165, 35), 2, cv2.LINE_AA)
+
+    _add_glow_layer(frame, front_glow, weight=0.88, blur_sigma=5.0)
+
+
+def _draw_eye_iris(frame, points, ring_ids, iris_idx, mode, now):
+    """Dibuja iris personalizados (Super Saiyan o Sharingan) recortados al contorno real del ojo."""
+    h, w = frame.shape[:2]
+    ring = np.rint(points[list(ring_ids)]).astype(np.int32)
+    x, y, bw, bh = cv2.boundingRect(ring)
+    if bw < 6 or bh < 3:
+        return
+    x0, y0 = max(0, x - 2), max(0, y - 2)
+    x1, y1 = min(w, x + bw + 2), min(h, y + bh + 2)
+    if x1 <= x0 or y1 <= y0:
+        return
+
+    if len(points) > iris_idx:
+        center = points[iris_idx]
+    else:
+        center = points[list(ring_ids)].mean(axis=0)
+    cx, cy = float(center[0]) - x0, float(center[1]) - y0
+    radius = max(3, int(round(min(bw * 0.27, max(bh * 0.52, bw * 0.19)))))
+
+    roi = frame[y0:y1, x0:x1]
+    overlay = roi.copy()
+    mask = np.zeros((y1 - y0, x1 - x0), dtype=np.uint8)
+    cv2.fillPoly(mask, [ring - np.array((x0, y0), dtype=np.int32)], 255, cv2.LINE_AA)
+
+    ic = (int(round(cx)), int(round(cy)))
+    if mode == 'saiyan':
+        cv2.circle(overlay, ic, radius, (205, 240, 80), -1, cv2.LINE_AA)
+        cv2.circle(overlay, ic, radius, (110, 165, 35), 1, cv2.LINE_AA)
+        cv2.circle(overlay, ic, max(1, int(round(radius * 0.42))), (25, 45, 25), -1, cv2.LINE_AA)
+        cv2.circle(overlay, (ic[0] - max(1, radius // 3), ic[1] - max(1, radius // 3)),
+                   max(1, radius // 4), (255, 255, 240), -1, cv2.LINE_AA)
+        alpha_strength = 0.85
+    else:  # Sharingan
+        cv2.circle(overlay, ic, radius, (24, 24, 215), -1, cv2.LINE_AA)
+        cv2.circle(overlay, ic, max(2, int(round(radius * 0.82))), (35, 35, 248), -1, cv2.LINE_AA)
+        cv2.circle(overlay, ic, radius, (15, 12, 35), max(1, radius // 6), cv2.LINE_AA)
+        inner_r = max(2, int(round(radius * 0.56)))
+        cv2.circle(overlay, ic, inner_r, (18, 12, 22), 1, cv2.LINE_AA)
+        cv2.circle(overlay, ic, max(1, int(round(radius * 0.25))), (12, 10, 14), -1, cv2.LINE_AA)
+        # 3 tomoe girando sobre el anillo interior
+        tomoe_r = max(1, int(round(radius * 0.17)))
+        for k in range(3):
+            a = now * 2.4 + k * (2.0 * math.pi / 3.0)
+            tx = int(round(cx + inner_r * math.cos(a)))
+            ty = int(round(cy + inner_r * math.sin(a)))
+            cv2.circle(overlay, (tx, ty), tomoe_r, (10, 8, 12), -1, cv2.LINE_AA)
+            tail = (int(round(tx - tomoe_r * 1.4 * math.sin(a))),
+                    int(round(ty + tomoe_r * 1.4 * math.cos(a))))
+            cv2.line(overlay, (tx, ty), tail, (10, 8, 12), max(1, tomoe_r), cv2.LINE_AA)
+        cv2.circle(overlay, (ic[0] - max(1, radius // 3), ic[1] - max(1, radius // 3)),
+                   max(1, radius // 5), (245, 245, 255), -1, cv2.LINE_AA)
+        alpha_strength = 0.92
+
+    alpha = (cv2.GaussianBlur(mask, (3, 3), 0).astype(np.float32) / 255.0 * alpha_strength)[..., None]
+    roi[:] = np.clip(roi * (1.0 - alpha) + overlay * alpha, 0, 255).astype(np.uint8)
+
+
+def _draw_lightning_bolt(canvas, start, end, seed, color, core_color, spread):
+    """Dibuja un rayo quebrado determinista para el aura Super Saiyan."""
+    rng = np.random.default_rng(seed)
+    p0 = np.asarray(start, dtype=np.float32)
+    p1 = np.asarray(end, dtype=np.float32)
+    diff = p1 - p0
+    length = max(float(np.linalg.norm(diff)), 1.0)
+    perp = np.array((-diff[1], diff[0]), dtype=np.float32) / length
+    pts = [p0]
+    for step in range(1, 6):
+        t = step / 6.0
+        jitter = rng.uniform(-spread, spread) * (1.0 - abs(t - 0.5) * 1.4)
+        pts.append(p0 + diff * t + perp * jitter)
+    pts.append(p1)
+    poly = np.rint(pts).astype(np.int32)
+    cv2.polylines(canvas, [poly], False, color, 4, cv2.LINE_AA)
+    cv2.polylines(canvas, [poly], False, core_color, 1, cv2.LINE_AA)
+
+
+def _draw_super_saiyan(frame, points, right, up, scale, now):
+    """Aura eléctrica dorada, rayos chispeantes, pelo puntiagudo y ojos/cejas Saiyan."""
+    forehead = points[10]
+    head_center = 0.5 * (forehead + points[152])
+    pulse = 1.0 + 0.06 * math.sin(now * 14.0)
+
+    def local(anchor, xy):
+        coords = np.asarray(xy, dtype=np.float32)
+        return np.rint(anchor + scale * (coords[..., :1] * right + coords[..., 1:] * up)).astype(np.int32)
+
+    # 1) Aura dorada flamígera ascendente (estilo Dragon Ball) detrás de la cabeza
+    aura = np.zeros_like(frame)
+    for k in range(13):
+        frac = (k / 12.0) * 2.0 - 1.0  # -1 (izquierda) a +1 (derecha)
+        wobble = 0.16 * math.sin(now * 12.0 + k * 1.7)
+        base_x = frac * 1.05
+        base_y = -1.10 + 0.35 * (1.0 - abs(frac))
+        peak_h = (1.65 - 0.35 * abs(frac) + wobble) * pulse
+        width = 0.28 + 0.08 * (1.0 - abs(frac))
+        flame = local(head_center, [
+            (base_x - width, base_y),
+            (base_x - width * 0.55, base_y + peak_h * 0.55),
+            (base_x + 0.08 * math.sin(now * 9.0 + k), base_y + peak_h),
+            (base_x + width * 0.55, base_y + peak_h * 0.55),
+            (base_x + width, base_y),
+        ])
+        cv2.fillPoly(aura, [flame], (25, 185, 255), cv2.LINE_AA)
+
+    # Partículas doradas ascendentes
+    for i in range(16):
+        phase = (now * 1.15 + i * 0.19) % 1.0
+        px = (math.sin(i * 3.1) * 1.35) * scale
+        py = (-1.15 + phase * 2.75) * scale
+        pt = head_center + px * right + py * up
+        rad = max(2, int(round(scale * 0.045 * (1.0 - phase * 0.7))))
+        cv2.circle(aura, tuple(np.rint(pt).astype(int)), rad, (110, 240, 255), -1, cv2.LINE_AA)
+
+    face_mask = _face_exclusion_mask(frame.shape, points)
+    # Suavizado intenso para que el aura sea energía difusa y no polígonos duros
+    h, w = frame.shape[:2]
+    small_aura = cv2.resize(aura, (max(1, w // 4), max(1, h // 4)), interpolation=cv2.INTER_AREA)
+    small_aura = cv2.GaussianBlur(small_aura, (0, 0), 5.5)
+    soft_aura = cv2.resize(small_aura, (w, h), interpolation=cv2.INTER_LINEAR)
+    keep = (1.0 - face_mask.astype(np.float32) / 255.0)[..., None]
+    soft_aura = np.clip(soft_aura * keep, 0, 255).astype(np.uint8)
+    cv2.addWeighted(frame, 1.0, soft_aura, 0.95, 0, dst=frame)
+
+    # 2) Pelo energético dorado puntiagudo sobre la cabeza
+    sway = 0.025 * math.sin(now * 10.0)
+    spikes_outer = [
+        (-0.82, -0.08), (-1.05, 0.42 + sway), (-0.68, 0.36),
+        (-0.84, 0.96 - sway), (-0.42, 0.56), (-0.34, 1.28 + sway),
+        (-0.08, 0.72), (0.04, 1.40 - sway), (0.22, 0.72),
+        (0.46, 1.24 + sway), (0.48, 0.56), (0.88, 0.90 - sway),
+        (0.70, 0.36), (1.05, 0.38 + sway), (0.82, -0.08),
+        (0.58, 0.06), (0.24, 0.14), (0.0, 0.02), (-0.24, 0.14), (-0.58, 0.06),
+    ]
+    hair_poly = local(forehead, spikes_outer)
+    cv2.fillPoly(frame, [hair_poly], (42, 218, 255), cv2.LINE_AA)
+
+    spikes_inner = [
+        (-0.60, 0.12), (-0.62, 0.74 - sway), (-0.28, 0.44),
+        (-0.22, 1.00 + sway), (-0.02, 0.56), (0.05, 1.12 - sway),
+        (0.18, 0.56), (0.34, 0.96 + sway), (0.36, 0.42),
+        (0.64, 0.70 - sway), (0.56, 0.12), (0.0, 0.08),
+    ]
+    cv2.fillPoly(frame, [local(forehead, spikes_inner)], (135, 248, 255), cv2.LINE_AA)
+    cv2.polylines(frame, [hair_poly], True, (18, 128, 210), 2, cv2.LINE_AA)
+
+    # 3) Cejas doradas y ojos verde-turquesa Saiyan
+    for brow_ids in (LEFT_BROW, RIGHT_BROW):
+        brow = np.rint(points[list(brow_ids)]).astype(np.int32)
+        cv2.polylines(frame, [brow], False, (35, 215, 255), max(3, int(round(scale * 0.055))), cv2.LINE_AA)
+        cv2.polylines(frame, [brow], False, (145, 250, 255), max(1, int(round(scale * 0.02))), cv2.LINE_AA)
+    _draw_eye_iris(frame, points, LEFT_EYE_RING, 468, 'saiyan', now)
+    _draw_eye_iris(frame, points, RIGHT_EYE_RING, 473, 'saiyan', now)
+
+    # 4) Relámpagos eléctricos azul-cian saltando alrededor del aura (12 FPS estilo anime)
+    bolt_layer = np.zeros_like(frame)
+    tick = int(now * 12.0)
+    for b in range(5):
+        a0 = ((tick * 1.7 + b * 1.25) % (2.0 * math.pi))
+        a1 = a0 + 0.55 * (1 if b % 2 == 0 else -1)
+        r0 = scale * (0.95 + 0.15 * ((tick + b) % 3))
+        r1 = scale * (1.42 + 0.18 * ((tick + 2 * b) % 3))
+        start = head_center + r0 * (math.cos(a0) * right + math.sin(a0) * up)
+        end = head_center + r1 * (math.cos(a1) * right + math.sin(a1) * up)
+        _draw_lightning_bolt(bolt_layer, start, end, tick * 17 + b * 31,
+                             (255, 215, 70), (255, 255, 240), spread=scale * 0.16)
+    _add_glow_layer(frame, bolt_layer, weight=0.95, blur_sigma=4.0)
+
+
+def _draw_sharingan(frame, points, right, up, scale, now):
+    """Iris Sharingan con 3 tomoe giratorios, marcas místicas y aura oscura carmesí."""
+    forehead = points[10]
+    head_center = 0.5 * (forehead + points[152])
+
+    # 1) Ligero oscurecimiento dramático con tinte carmesí en el entorno
+    tint = np.full_like(frame, (28, 16, 54))
+    cv2.addWeighted(frame, 0.86, tint, 0.14, 0, dst=frame)
+
+    # 2) Aura oscura carmesí flamígera (estilo chakra / Susanoo) detrás de la cabeza
+    def local(anchor, xy):
+        coords = np.asarray(xy, dtype=np.float32)
+        return np.rint(anchor + scale * (coords[..., :1] * right + coords[..., 1:] * up)).astype(np.int32)
+
+    aura = np.zeros_like(frame)
+    pulse = 1.0 + 0.06 * math.sin(now * 6.0)
+    for k in range(11):
+        frac = (k / 10.0) * 2.0 - 1.0
+        wobble = 0.18 * math.sin(now * 7.5 + k * 2.1)
+        bx = frac * 1.02
+        by = -1.05 + 0.30 * (1.0 - abs(frac))
+        peak = (1.55 - 0.28 * abs(frac) + wobble) * pulse
+        flame = local(head_center, [
+            (bx - 0.30, by),
+            (bx - 0.16, by + peak * 0.55),
+            (bx + 0.10 * math.cos(now * 6.5 + k), by + peak),
+            (bx + 0.16, by + peak * 0.55),
+            (bx + 0.30, by),
+        ])
+        color = (55, 18, 210) if k % 2 == 0 else (95, 22, 155)
+        cv2.fillPoly(aura, [flame], color, cv2.LINE_AA)
+    for i in range(18):
+        phase = (now * 0.85 + i * 0.23) % 1.0
+        side_off = math.sin(i * 2.4 + now * 1.5) * scale * 1.25
+        y_off = (-1.0 + phase * 2.45) * scale
+        pt = head_center + side_off * right + y_off * up
+        rad = max(2, int(round(scale * 0.06 * (1.0 - phase * 0.7))))
+        cv2.circle(aura, tuple(np.rint(pt).astype(int)), rad, (45, 30, 245), -1, cv2.LINE_AA)
+
+    face_mask = _face_exclusion_mask(frame.shape, points)
+    h, w = frame.shape[:2]
+    small_aura = cv2.resize(aura, (max(1, w // 4), max(1, h // 4)), interpolation=cv2.INTER_AREA)
+    small_aura = cv2.GaussianBlur(small_aura, (0, 0), 5.0)
+    soft_aura = cv2.resize(small_aura, (w, h), interpolation=cv2.INTER_LINEAR)
+    keep = (1.0 - face_mask.astype(np.float32) / 255.0)[..., None]
+    soft_aura = np.clip(soft_aura * keep, 0, 255).astype(np.uint8)
+    cv2.addWeighted(frame, 1.0, soft_aura, 0.92, 0, dst=frame)
+
+    # 3) Marcas místicas bajo los ojos y en la frente (estilo ninja/maldición)
+
+    mark_glow = np.zeros_like(frame)
+    for side in (-1.0, 1.0):
+        cheek = 0.55 * points[291 if side > 0 else 61] + 0.45 * points[454 if side > 0 else 234]
+        for row, dy in enumerate((0.12, 0.03, -0.06)):
+            seg = local(cheek, [(-side * 0.08, dy), (side * (0.18 - row * 0.03), dy - 0.04)])
+            cv2.line(frame, tuple(seg[0]), tuple(seg[1]), (25, 16, 48), 2, cv2.LINE_AA)
+            cv2.line(mark_glow, tuple(seg[0]), tuple(seg[1]), (40, 35, 225), 2, cv2.LINE_AA)
+
+    # Sello místico en el centro de la frente
+    seal = local(forehead, [(0.0, -0.08), (0.06, -0.17), (0.0, -0.26), (-0.06, -0.17)])
+    cv2.fillPoly(frame, [seal], (25, 15, 75), cv2.LINE_AA)
+    cv2.polylines(frame, [seal], True, (50, 50, 245), 2, cv2.LINE_AA)
+    cv2.polylines(mark_glow, [seal], True, (45, 45, 255), 3, cv2.LINE_AA)
+
+    # 4) Iris Sharingan giratorios en ambos ojos
+    _draw_eye_iris(frame, points, LEFT_EYE_RING, 468, 'sharingan', now)
+    _draw_eye_iris(frame, points, RIGHT_EYE_RING, 473, 'sharingan', now)
+
+    # Pequeño destello rojo alrededor de los ojos
+    for eye_ring in (LEFT_EYE_RING, RIGHT_EYE_RING):
+        eye_center = points[list(eye_ring)].mean(axis=0)
+        cv2.circle(mark_glow, tuple(np.rint(eye_center).astype(int)),
+                   max(4, int(round(scale * 0.14))), (30, 25, 195), 2, cv2.LINE_AA)
+    _add_glow_layer(frame, mark_glow, weight=0.65, blur_sigma=4.0)
+
+
+def _draw_anime_sweatdrop(frame, points, right, up, scale, now):
+    """Gota de sudor anime deslizándose en la sien + líneas verticales de desánimo."""
+    forehead = points[10]
+    ink = (54, 27, 72)
+
+    def local(anchor, xy):
+        coords = np.asarray(xy, dtype=np.float32)
+        return np.rint(anchor + scale * (coords[..., :1] * right + coords[..., 1:] * up)).astype(np.int32)
+
+    # Líneas verticales azuladas de "gloom" sobre la frente
+    for idx, dx in enumerate((-0.34, -0.22, -0.10, 0.02, 0.14)):
+        p0 = local(forehead, (dx, -0.02))
+        p1 = local(forehead, (dx, -0.32 - 0.06 * (idx % 2)))
+        cv2.line(frame, tuple(p0), tuple(p1), (150, 105, 80), 2, cv2.LINE_AA)
+
+    # Gota de sudor anime grande en la sien derecha cayendo en bucle suave
+    slide = ((now * 0.65) % 1.0) * 0.16
+    drop_anchor = forehead + scale * (0.58 * right + (0.04 - slide) * up)
+    drop = local(drop_anchor, [
+        (0.0, 0.24),
+        (0.09, 0.07),
+        (0.13, -0.04),
+        (0.10, -0.14),
+        (0.0, -0.18),
+        (-0.10, -0.14),
+        (-0.13, -0.04),
+        (-0.09, 0.07),
+    ])
+    cv2.fillPoly(frame, [drop], (250, 205, 115), cv2.LINE_AA)
+    cv2.polylines(frame, [drop], True, ink, 2, cv2.LINE_AA)
+    # Brillo blanco característico de gota anime
+    glint = local(drop_anchor, [(-0.05, 0.02), (-0.07, -0.07), (-0.03, -0.10), (-0.02, -0.02)])
+    cv2.fillPoly(frame, [glint], (255, 255, 255), cv2.LINE_AA)
+
+
+def draw_costume(frame, observation, spell, now=0.0):
     points = observation.landmarks[:, :2] * frame.shape[1::-1]
     axis = points[263] - points[33]
     eye_width = float(np.linalg.norm(axis))
@@ -309,7 +707,23 @@ def draw_costume(frame, observation, spell):
         return
     right = axis / eye_width
     up = np.array((right[1], -right[0]))
+    if np.dot(up, points[10] - points[152]) < 0:
+        up = -up
     scale = max(eye_width, .53 * np.linalg.norm(points[152] - points[10]))
+
+    if spell == 'circle':
+        _draw_doctor_strange(frame, points, right, up, scale, now)
+        return
+    if spell == 'square':
+        _draw_super_saiyan(frame, points, right, up, scale, now)
+        return
+    if spell == 'triangle':
+        _draw_sharingan(frame, points, right, up, scale, now)
+        return
+    if spell == 'failed':
+        _draw_anime_sweatdrop(frame, points, right, up, scale, now)
+        return
+
     ink = (54, 27, 72)
 
     def local(anchor, xy):
@@ -328,61 +742,6 @@ def draw_costume(frame, observation, spell):
         cv2.ellipse(frame, center, axes, tilt + angle, 0, 360, color, -1, cv2.LINE_AA)
 
     forehead = points[10]
-    # Animal ears and facial accents follow the pose after the transformation.
-    ears = {'circle': ('rabbit', 'rabbit'), 'square': ('bear', 'bear'),
-            'triangle': ('fox', 'fox'), 'failed': ('rabbit', 'fox')}
-    if spell in ears:
-        fh, fw = frame.shape[:2]
-        sw, sh = max(1, fw // 4), max(1, fh // 4)
-        aura = np.zeros((sh, sw, 3), dtype=np.uint8)
-        tint = SPELLS[spell][1]
-        center_full = (forehead + points[152]) / 2
-        center = (round(float(center_full[0]) * sw / fw), round(float(center_full[1]) * sh / fh))
-        tilt = math.degrees(math.atan2(right[1], right[0]))
-        rx = max(1, round(scale * .91 * sw / fw))
-        ry = max(1, round(scale * 1.12 * sh / fh))
-        cv2.ellipse(aura, center, (rx, ry), tilt,
-                    0, 360, tint, max(2, round(scale * .085 * sw / fw)), cv2.LINE_AA)
-        aura = cv2.GaussianBlur(aura, (0, 0), max(1.5, scale * .085 * sw / fw))
-        aura = cv2.resize(aura, (fw, fh), interpolation=cv2.INTER_LINEAR)
-        cv2.addWeighted(frame, 1., aura, .78, 0, dst=frame)
-        for side, animal in zip((-1, 1), ears[spell]):
-            anchor = local(forehead, (side * .66, -.07))
-            if animal == 'rabbit':
-                ellipse(anchor, (side * .17, .43), (.16, .49), (242, 224, 247), side * 19)
-                ellipse(anchor, (side * .19, .48), (.075, .34), (190, 129, 243), side * 19)
-            elif animal == 'bear':
-                ellipse(anchor, (side * .13, .18), (.25, .24), (89, 138, 191))
-                ellipse(anchor, (side * .13, .18), (.14, .13), (141, 193, 226))
-            else:
-                polygon(anchor, [(side*.03, -.08), (side*.19, .65), (side*.43, .03)],
-                        (80, 141, 246))
-                polygon(anchor, [(side*.14, .04), (side*.21, .47), (side*.33, .08)],
-                        (176, 217, 255))
-
-        nose = points[2]
-        for side in (-1, 1):
-            cheek = .52 * points[291 if side == 1 else 61] + .48 * points[454 if side == 1 else 234]
-            cheek_style = ('circle' if side < 0 else 'triangle') if spell == 'failed' else spell
-            if cheek_style == 'circle':
-                ellipse(cheek, (0, .05), (.16, .093), (187, 139, 240))
-                for dy in (-.065, 0, .065):
-                    a, b = local(cheek, [(side * .04, dy), (side * .25, 1.7 * dy)])
-                    cv2.line(frame, tuple(a), tuple(b), (238, 226, 252), 2, cv2.LINE_AA)
-            elif cheek_style == 'triangle':
-                polygon(cheek, [(side * .22, .17), (side * -.16, .08), (side * .15, -.065)],
-                        (167, 222, 255))
-            else:
-                for dx in (-.065, .02, .105):
-                    ellipse(cheek, (dx, abs(dx) / 2), (.024, .024), (105, 158, 221))
-        polygon(nose, [(-.115,.035), (0,.075), (.115,.035), (.07,-.04), (0,-.075), (-.07,-.04)],
-                (124, 93, 231) if spell == 'circle' else (73, 40, 89))
-        ellipse(nose, (-.034, .025), (.031, .016), (214, 180, 247))
-        for side in (-1, 1):
-            for dx, dy, radius in ((.87, .03, .027), (.98, -.14, .018), (.81, -.27, .013)):
-                ellipse(forehead, (side * dx, dy), (radius, radius), tint)
-        return
-
     ellipse(forehead, (0, -.025), (.76, .135), ink)
     polygon(forehead, [(-.47, .015), (-.24, .54), (.11, 1.06), (.45, 1.10),
                        (.30, .79), (.33, .39), (.49, .015)], (104, 58, 141))
