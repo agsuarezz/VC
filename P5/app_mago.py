@@ -23,6 +23,8 @@ def draw_panel(frame, air):
     status, color = SPELLS.get(air.spell, ('Traza tu primer hechizo', (223, 191, 249)))
     if air.points:
         status, color = 'Trazando hechizo...', (250, 201, 255)
+    elif air.locked and air.cursor is not None:
+        status = f'{status} | Baja el dedo para repetir'
     panel = frame[max(0, h-72):, :]
     cv2.addWeighted(panel, .26, np.full_like(panel, (40, 20, 49)), .74, 0, dst=panel)
     cv2.line(frame, (0, max(0, h-72)), (w, max(0, h-72)), (149, 88, 177), 1)
@@ -56,7 +58,13 @@ def main():
         if not np.isfinite(fps) or fps <= 0:
             fps = 25
         face = FaceTracker(ROOT / 'models/face_landmarker.task', video=True)
-        hand = HandTracker(ROOT / 'models/hand_landmarker.task')
+        hand = HandTracker(
+            ROOT / 'models/hand_landmarker.task',
+            num_hands=2,
+            min_detection_confidence=0.35,
+            min_presence_confidence=0.30,
+            min_tracking_confidence=0.30,
+        )
         air = AirSpell()
         count = 0
         requested_record = args.record

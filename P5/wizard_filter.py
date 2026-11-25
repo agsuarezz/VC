@@ -50,19 +50,98 @@ def classify_shape(points):
     return 'failed'
 
 
+class OneEuroFilter:
+    """Adaptive low-pass filter: suppresses jitter at rest, minimizes lag in motion."""
+
+    def __init__(self, min_cutoff=1.6, beta=6.0, d_cutoff=1.0):
+        self.min_cutoff = min_cutoff
+        self.beta = beta
+        self.d_cutoff = d_cutoff
+        self.x = None
+        self.dx = np.zeros(2, dtype=np.float64)
+        self.t = None
+
+    def reset(self):
+        self.x = None
+        self.dx = np.zeros(2, dtype=np.float64)
+        self.t = None
+
+    @staticmethod
+    def _alpha(cutoff, dt):
+        tau = 1.0 / (2.0 * math.pi * cutoff)
+        return 1.0 / (1.0 + tau / dt)
+
+    def update(self, raw, now, scale):
+        point = np.asarray(raw, dtype=np.float64)
+        if self.x is None or self.t is None:
+            self.x = point.copy()
+            self.dx[:] = 0.0
+            self.t = float(now)
+            return self.x.copy()
+        dt = float(now) - self.t
+        if dt <= 1e-5:
+            return self.x.copy()
+        if dt > 0.35:
+            self.x = point.copy()
+            self.dx[:] = 0.0
+            self.t = float(now)
+            return self.x.copy()
+        vel = (point - self.x) / dt
+        a_d = self._alpha(self.d_cutoff, dt)
+        self.dx = a_d * vel + (1.0 - a_d) * self.dx
+        speed_norm = float(np.linalg.norm(self.dx)) / max(float(scale), 1.0)
+        cutoff = self.min_cutoff + self.beta * speed_norm
+        alpha = self._alpha(cutoff, dt)
+        self.x = alpha * point + (1.0 - alpha) * self.x
+        self.t = float(now)
+        return self.x.copy()
+
+    def predict(self, now):
+        if self.x is None or self.t is None:
+            return None
+        dt = min(max(0.0, float(now) - self.t), 0.10)
+        return self.x + self.dx * dt
+
+
 def pointing_tip(hand, size, tracing):
-    """Allow a slightly bent index and track finger bends in three dimensions."""
+    """Detect an extended index finger robustly across curls, knuckle folds and tilts."""
+    hand = np.asarray(hand, dtype=np.float32)
+    if hand.shape != (21, 3) or not np.isfinite(hand).all():
+        return None
     w, h = size
-    points = hand * (w, h, w)
-    palm = np.linalg.norm(points[9] - points[0])
+    points = hand * np.array((w, h, w), dtype=np.float32)
+    wrist = points[0]
+    palm = max(float(np.linalg.norm(points[9] - wrist)),
+               float(np.linalg.norm(points[5] - points[17])))
+    if palm <= 3.0:
+        return None
+
     fingers = points[np.arange(5, 21).reshape(4, 4)]
     segments = np.linalg.norm(np.diff(fingers, axis=1), axis=2).sum(axis=1)
     reach = np.linalg.norm(fingers[:, 3] - fingers[:, 0], axis=1)
     straightness = reach / np.maximum(segments, 1e-5)
-    index_above_knuckle = np.linalg.norm(points[8] - points[0]) > .22 * palm + np.linalg.norm(points[5] - points[0])
-    raised = straightness[1:] > .85
-    if (palm > 3 and index_above_knuckle and straightness[0] > (.69 if tracing else .78)
-            and np.count_nonzero(raised) <= (1 if tracing else 0)):
+
+    wrist_to_mcp = np.linalg.norm(fingers[:, 0] - wrist, axis=1)
+    wrist_to_pip = np.linalg.norm(fingers[:, 1] - wrist, axis=1)
+    wrist_to_tip = np.linalg.norm(fingers[:, 3] - wrist, axis=1)
+
+    # Index finger must extend beyond its PIP and knuckle, with relaxed straightness mid-stroke.
+    index_extended = (
+        wrist_to_tip[0] > wrist_to_pip[0] * (1.02 if tracing else 1.06)
+        and wrist_to_tip[0] > wrist_to_mcp[0] + (0.16 if tracing else 0.24) * palm
+        and straightness[0] > (0.60 if tracing else 0.72)
+    )
+    if not index_extended:
+        return None
+
+    # Other fingers only count as raised if both straight AND extended away from the palm.
+    other_raised = (
+        (straightness[1:] > (0.84 if tracing else 0.80))
+        & (wrist_to_tip[1:] > wrist_to_pip[1:] * (1.08 if tracing else 1.05))
+        & (wrist_to_tip[1:] > wrist_to_mcp[1:] + (0.34 if tracing else 0.28) * palm)
+        & (wrist_to_tip[1:] > (0.82 if tracing else 0.76) * wrist_to_tip[0])
+    )
+    if np.count_nonzero(other_raised) <= (1 if tracing else 0):
         return points[8, :2]
     return None
 
@@ -70,50 +149,155 @@ def pointing_tip(hand, size, tracing):
 class AirSpell:
     def __init__(self):
         self.points = []
+        self._arc_lengths = []
         self.spell = None
         self.cast_at = -100.
         self.last_seen = -100.
         self.locked = False
+        self.cursor = None
+        self._filter = OneEuroFilter()
+        self._pending_tip = None
+        self._pending_at = -100.
+        self._outlier_tip = None
+        self._outlier_at = -100.
+
+    def _append_point(self, tip):
+        point = np.asarray(tip, dtype=np.float64)
+        if not self.points:
+            self.points.append(point)
+            self._arc_lengths.append(0.0)
+            return
+        step = float(np.linalg.norm(point - self.points[-1]))
+        self.points.append(point)
+        self._arc_lengths.append(self._arc_lengths[-1] + step)
+
+    def _find_closed_loop(self, min_dim):
+        if len(self.points) < 12:
+            return None
+        pts = np.asarray(self.points, dtype=np.float64)
+        tip = pts[-1]
+        total_len = self._arc_lengths[-1]
+
+        # 1) Direct closure back near the starting point.
+        span = np.ptp(pts, axis=0)
+        box_max, box_min = float(max(span)), float(min(span))
+        if (box_min >= 0.08 * min_dim and total_len >= 2.1 * box_max
+                and float(np.linalg.norm(tip - pts[0])) < 0.16 * box_max):
+            return 0
+
+        # 2) Closure onto an early point (trims short lead-in tail from raising the hand).
+        max_start = min(len(pts) - 10, max(2, len(pts) // 3))
+        if box_min >= 0.08 * min_dim and total_len >= 2.1 * box_max:
+            dists = np.linalg.norm(pts[1:max_start] - tip, axis=1)
+            for offset in np.flatnonzero(dists < 0.13 * box_max):
+                idx = int(offset) + 1
+                loop_len = total_len - self._arc_lengths[idx]
+                loop_span = np.ptp(pts[idx:], axis=0)
+                loop_max, loop_min = float(max(loop_span)), float(min(loop_span))
+                if loop_min >= 0.08 * min_dim and loop_len >= 2.1 * loop_max:
+                    return idx
+        return None
 
     def update(self, hands, size, now):
-        # Keep the hand closest to the current stroke when both index fingers are up.
+        min_dim, max_dim = float(min(size)), float(max(size))
         tips = [tip for hand in hands
                 if (tip := pointing_tip(hand, size, tracing=bool(self.points))) is not None]
         if tips:
+            ref = self._filter.predict(now)
+            if ref is None and self._pending_tip is not None:
+                ref = self._pending_tip
+            if ref is None and self.points:
+                ref = self.points[-1]
+            raw_tip = (min(tips, key=lambda xy: float(np.linalg.norm(xy - ref)))
+                       if ref is not None else tips[0])
+
             if self.locked:
                 self.last_seen = now
+                self.cursor = self._filter.update(raw_tip, now, min_dim)
+                self._pending_tip = None
+                self._outlier_tip = None
                 return
+
             if not self.points:
+                # Confirm pointing across 2 close frames to prevent 1-frame stray starts.
+                if self._pending_tip is None or now - self._pending_at > 0.25:
+                    self._filter.reset()
+                    self.cursor = self._filter.update(raw_tip, now, min_dim)
+                    self._pending_tip = self.cursor.copy()
+                    self._pending_at = now
+                    self.last_seen = now
+                    return
+                if float(np.linalg.norm(raw_tip - self._pending_tip)) > 0.22 * max_dim:
+                    self._filter.reset()
+                    self.cursor = self._filter.update(raw_tip, now, min_dim)
+                    self._pending_tip = self.cursor.copy()
+                    self._pending_at = now
+                    self.last_seen = now
+                    return
+                first_tip = self._pending_tip
+                self._pending_tip = None
+                self.cursor = self._filter.update(raw_tip, now, min_dim)
                 self.last_seen = now
-                self.points.append(tips[0])
+                self._append_point(first_tip)
+                if float(np.linalg.norm(self.cursor - first_tip)) >= max(3.0, min_dim * 0.005):
+                    self._append_point(self.cursor)
                 return
-            tip = min(tips, key=lambda xy: np.linalg.norm(xy - self.points[-1]))
-            distance = np.linalg.norm(tip - self.points[-1])
-            # Ignore isolated teleports from the tracker without cutting the stroke.
-            if distance > .27 * max(size):
-                if now - self.last_seen > .32:
-                    self.finish(now)
-                return
+
+            # Time-aware outlier gate: reject isolated 1-frame teleports, recover on fast moves.
+            dt = max(1.0 / 30.0, float(now) - self.last_seen)
+            max_jump = min(0.45, 0.16 + 0.9 * dt) * max_dim
+            anchor = self.cursor if self.cursor is not None else self.points[-1]
+            raw_distance = float(np.linalg.norm(raw_tip - anchor))
+            if raw_distance > max_jump:
+                if (self._outlier_tip is not None
+                        and now - self._outlier_at <= 0.18
+                        and float(np.linalg.norm(raw_tip - self._outlier_tip)) <= 0.14 * max_dim):
+                    self._outlier_tip = None
+                else:
+                    self._outlier_tip = np.asarray(raw_tip, dtype=np.float64)
+                    self._outlier_at = now
+                    if now - self.last_seen > 0.45:
+                        self.finish(now)
+                    return
+            else:
+                self._outlier_tip = None
+
             self.last_seen = now
-            weight = .55 + .39 * min(1., distance / (.04 * min(size)))
-            tip = weight * tip + (1 - weight) * self.points[-1]
-            if distance >= max(1.5, min(size) * .003):
-                self.points.append(tip)
-            span = np.ptp(self.points, axis=0)
-            closed = np.linalg.norm(tip - self.points[0]) < .12 * max(span)
-            traced_loop = len(self.points) >= 13 and min(span) >= .083 * min(size) and closed
-            if traced_loop or len(self.points) >= 600:
+            tip = self._filter.update(raw_tip, now, min_dim)
+            self.cursor = tip
+            min_step = max(3.0, min_dim * 0.005)
+            if float(np.linalg.norm(tip - self.points[-1])) >= min_step:
+                self._append_point(tip)
+
+            loop_start = self._find_closed_loop(min_dim)
+            if loop_start is not None:
+                if loop_start > 0:
+                    self.points = self.points[loop_start:]
                 self.finish(now)
-        elif now - self.last_seen >= .32:
-            if self.points:
+            elif len(self.points) >= 600:
                 self.finish(now)
+            return
+
+        # No pointing finger detected in this frame.
+        if now - self._pending_at > 0.18:
+            self._pending_tip = None
+        if now - self.last_seen >= 0.15:
+            self.cursor = None
+        if self.points:
+            if now - self.last_seen >= 0.45:
+                self.finish(now)
+        elif self.locked and now - self.last_seen >= 0.22:
             self.locked = False
+            self._filter.reset()
 
     def finish(self, now):
         if len(self.points) >= 4 and max(np.ptp(self.points, axis=0)) >= 20:
             self.spell = classify_shape(self.points)
             self.cast_at = now
         self.points.clear()
+        self._arc_lengths.clear()
+        self._pending_tip = None
+        self._outlier_tip = None
         self.locked = True
 
 
@@ -148,13 +332,19 @@ def draw_costume(frame, observation, spell):
     ears = {'circle': ('rabbit', 'rabbit'), 'square': ('bear', 'bear'),
             'triangle': ('fox', 'fox'), 'failed': ('rabbit', 'fox')}
     if spell in ears:
-        aura = np.zeros_like(frame)
+        fh, fw = frame.shape[:2]
+        sw, sh = max(1, fw // 4), max(1, fh // 4)
+        aura = np.zeros((sh, sw, 3), dtype=np.uint8)
         tint = SPELLS[spell][1]
-        center = tuple(np.rint((forehead + points[152]) / 2).astype(int))
+        center_full = (forehead + points[152]) / 2
+        center = (round(float(center_full[0]) * sw / fw), round(float(center_full[1]) * sh / fh))
         tilt = math.degrees(math.atan2(right[1], right[0]))
-        cv2.ellipse(aura, center, (round(scale * .91), round(scale * 1.12)), tilt,
-                    0, 360, tint, max(4, round(scale * .085)), cv2.LINE_AA)
-        aura = cv2.GaussianBlur(aura, (0, 0), max(3., scale * .085))
+        rx = max(1, round(scale * .91 * sw / fw))
+        ry = max(1, round(scale * 1.12 * sh / fh))
+        cv2.ellipse(aura, center, (rx, ry), tilt,
+                    0, 360, tint, max(2, round(scale * .085 * sw / fw)), cv2.LINE_AA)
+        aura = cv2.GaussianBlur(aura, (0, 0), max(1.5, scale * .085 * sw / fw))
+        aura = cv2.resize(aura, (fw, fh), interpolation=cv2.INTER_LINEAR)
         cv2.addWeighted(frame, 1., aura, .78, 0, dst=frame)
         for side, animal in zip((-1, 1), ears[spell]):
             anchor = local(forehead, (side * .66, -.07))
@@ -209,13 +399,30 @@ def draw_magic(frame, air, now):
     h, w = frame.shape[:2]
     color = SPELLS.get(air.spell, ('', (255, 196, 217)))[1]
     if air.points:
-        trail = np.rint(air.points).astype(np.int32)
-        glow = np.zeros_like(frame)
-        cv2.polylines(glow, [trail], False, (218, 100, 241), 13, cv2.LINE_AA)
-        cv2.addWeighted(frame, 1., cv2.GaussianBlur(glow, (0, 0), 7), .85, 0, dst=frame)
+        render_pts = air.points if air.cursor is None else [*air.points, air.cursor]
+        trail = np.rint(render_pts).astype(np.int32)
+        sw, sh = max(1, w // 4), max(1, h // 4)
+        glow = np.zeros((sh, sw, 3), dtype=np.uint8)
+        small_trail = np.rint(np.asarray(render_pts) * (sw / w, sh / h)).astype(np.int32)
+        cv2.polylines(glow, [small_trail], False, (218, 100, 241), 4, cv2.LINE_AA)
+        glow = cv2.GaussianBlur(glow, (0, 0), 2.2)
+        glow = cv2.resize(glow, (w, h), interpolation=cv2.INTER_LINEAR)
+        cv2.addWeighted(frame, 1., glow, .85, 0, dst=frame)
         cv2.polylines(frame, [trail], False, (255, 215, 251), 3, cv2.LINE_AA)
-        cv2.circle(frame, tuple(trail[-1]), 8, (252, 203, 255), 2, cv2.LINE_AA)
-        cv2.circle(frame, tuple(trail[-1]), 3, (255, 255, 255), -1, cv2.LINE_AA)
+        if len(air.points) >= 8 and min(np.ptp(air.points, axis=0)) >= 0.05 * min(w, h):
+            start = tuple(trail[0])
+            cv2.circle(frame, start, 9, (218, 140, 255), 1, cv2.LINE_AA)
+            cv2.circle(frame, start, 3, (255, 225, 255), -1, cv2.LINE_AA)
+        tip = tuple(trail[-1])
+        cv2.circle(frame, tip, 8, (252, 203, 255), 2, cv2.LINE_AA)
+        cv2.circle(frame, tip, 3, (255, 255, 255), -1, cv2.LINE_AA)
+    elif air.cursor is not None:
+        tip = tuple(np.rint(air.cursor).astype(int))
+        if air.locked:
+            cv2.circle(frame, tip, 7, (170, 140, 195), 1, cv2.LINE_AA)
+        else:
+            cv2.circle(frame, tip, 7, (252, 203, 255), 2, cv2.LINE_AA)
+            cv2.circle(frame, tip, 2, (255, 255, 255), -1, cv2.LINE_AA)
 
     age = now - air.cast_at
     if 0 <= age < 1.35:

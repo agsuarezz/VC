@@ -170,17 +170,3 @@ def draw_sun(frame, observation):
     points = np.rint(observation.landmarks[:468, :2] * frame.shape[1::-1]).astype(np.int32)
     cv2.fillConvexPoly(mask, cv2.convexHull(points), 0)
     frame[mask != 0] = gold
-
-
-def draw_taco(frame, hand):
-    points = hand[:, :2] * frame.shape[1::-1]
-    left, top = points.min(axis=0)
-    right, bottom = points.max(axis=0)
-    width, height = right - left, bottom - top
-    radius_x = max(8, round(max(width * .60, height * .50)))
-    radius_y = max(5, round(max(height * .92, width * .36)))
-    center_x = round((left + right) / 2)
-    base_y = round(bottom - height * .07)
-    for lift, color in ((.17, (58, 95, 133)), (.10, (48, 173, 68)), (0, (60, 182, 245))):
-        origin = (center_x, base_y - round(radius_y * lift))
-        cv2.ellipse(frame, origin, (radius_x, radius_y), 0, 180, 360, color, -1, cv2.LINE_AA)

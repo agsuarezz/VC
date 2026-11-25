@@ -83,8 +83,7 @@ def main():
     if args.headless and not args.video:
         print('--headless requiere --video; no se abre la webcam sin vista previa.', file=sys.stderr)
         return 2
-    from lebron.visuals import FaceTracker, draw_lebron_filter, draw_sun, draw_taco
-    from lebron.gestures import taco_grip
+    from lebron.visuals import FaceTracker, draw_lebron_filter, draw_sun
     from lebron.gestures import HandTracker, GestureEngine, ParticleSystem
     from lebron.audio import AudioPlayer, EXPRESSION_SOUNDS
     from lebron.emotion import EmotionModel, ExpressionFaceCropper
@@ -193,10 +192,6 @@ def main():
             elif now - last_face_at <= .3:
                 face_y = last_face_y
             draw_expression_scores(frame, smoother.history, score_history, label, expression_names)
-            for hand in detected_hands:
-                if taco_grip(hand, frame.shape[1] / frame.shape[0]):
-                    draw_taco(frame, hand)
-                    text(frame, 'TACO TUESDAY!', 58, (60, 182, 245))
             if show_help:
                 draw_hand_feedback(frame, detected_hands)
             cue = reaction.update(label if observation is not None else None)

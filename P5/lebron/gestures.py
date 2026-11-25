@@ -6,7 +6,8 @@ import numpy as np
 
 
 class HandTracker:
-    def __init__(self, model_path):
+    def __init__(self, model_path, num_hands=2, min_detection_confidence=0.45,
+                 min_presence_confidence=0.45, min_tracking_confidence=0.45):
         import mediapipe as mp
         from mediapipe.tasks import python
         from mediapipe.tasks.python import vision
@@ -20,9 +21,10 @@ class HandTracker:
         detector_type = vision.GestureRecognizer if self.recognizes_poses else vision.HandLandmarker
         options = options_type(
             base_options=python.BaseOptions(model_asset_path=str(path)),
-            running_mode=vision.RunningMode.VIDEO, num_hands=2,
-            min_hand_detection_confidence=0.45,
-            min_hand_presence_confidence=0.45, min_tracking_confidence=0.45)
+            running_mode=vision.RunningMode.VIDEO, num_hands=num_hands,
+            min_hand_detection_confidence=min_detection_confidence,
+            min_hand_presence_confidence=min_presence_confidence,
+            min_tracking_confidence=min_tracking_confidence)
         self._detector = detector_type.create_from_options(options)
         self._last_frame_ms = -1
 
@@ -53,22 +55,6 @@ def extended_fingers(hand):
         away = np.linalg.norm(hand[tip, :2] - hand[0, :2]) > 1.15 * np.linalg.norm(hand[pip, :2] - hand[0, :2])
         extended.append(bool(straight and away))
     return tuple(extended)
-
-
-def taco_grip(hand, aspect):
-    """Pulgar opuesto a varios dedos curvados con hueco para sujetar el taco."""
-    points = hand * np.array((1., 1. / aspect, 1.))
-    scale = np.linalg.norm(points[0] - points[9])
-    if scale < 1e-5:
-        return False
-    curled = 0
-    for base in (5, 9, 13, 17):
-        joints = points[base:base+4]
-        length = np.linalg.norm(np.diff(joints, axis=0), axis=1).sum()
-        reach = np.linalg.norm(joints[-1] - joints[0])
-        curled += .23 * length < reach < .94 * length
-    gap = np.linalg.norm(points[4] - points[[8, 12]].mean(axis=0)) / scale
-    return curled >= 2 and .23 < gap < 1.22
 
 
 def open_palm(hand):
