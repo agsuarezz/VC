@@ -140,6 +140,27 @@ class GestureTests(unittest.TestCase):
             self.assertFalse(player.play("shot"))
             player.close()
 
+    def test_custom_expression_clips_are_used_without_regenerating_synthesized_wavs(self):
+        assets_dir = Path(__file__).resolve().parent.parent / "assets"
+        player = AudioPlayer(assets_dir)
+        expected = {
+            "happy": "sunshine.wav",
+            "surprise": "taco_tuesday.wav",
+            "sad": "lebron_lebron.wav",
+            "angry": "bo_bo_boom.wav",
+        }
+        for emotion, filename in expected.items():
+            clip = player._paths[emotion]
+            self.assertEqual(clip.name, filename)
+            self.assertTrue(clip.is_file())
+            self.assertFalse((assets_dir / "audio" / f"{emotion}.wav").exists())
+            with wave.open(str(clip), "rb") as sound:
+                samples = np.frombuffer(sound.readframes(sound.getnframes()), dtype=np.int16)
+                onset_frames = int(np.argmax(np.abs(samples) > 500)) // sound.getnchannels()
+                self.assertLess(onset_frames / sound.getframerate(), 0.25)
+                self.assertGreater(int(np.max(np.abs(samples))), 10000)
+        player.close()
+
     def test_lebron_variant_ignores_v_and_fist_effects(self):
         for posture in ('Victory', 'Closed_Fist'):
             engine = GestureEngine(posture_effects=False)

@@ -5,10 +5,17 @@ import struct
 import wave
 
 EXPRESSION_SOUNDS = {
-    'happy': ('Alegria', 'campanillas'),
-    'sad': ('Tristeza', 'melodia descendente'),
-    'angry': ('Enfado', 'golpe grave'),
-    'surprise': ('Sorpresa', 'tono ascendente'),
+    'happy': ('Alegria', 'you are my sunshine'),
+    'sad': ('Tristeza', 'lebron lebron'),
+    'angry': ('Enfado', 'bo bo boom'),
+    'surprise': ('Sorpresa', 'taco tuesday'),
+}
+
+CUSTOM_CLIPS = {
+    'happy': 'sunshine.wav',
+    'surprise': 'taco_tuesday.wav',
+    'sad': 'lebron_lebron.wav',
+    'angry': 'bo_bo_boom.wav',
 }
 
 
@@ -57,14 +64,15 @@ class AudioPlayer:
             directory = Path(asset_dir) / "audio"
             directory.mkdir(parents=True, exist_ok=True)
             for event in ("shot", "chalk", *EXPRESSION_SOUNDS):
+                clip_name = CUSTOM_CLIPS.get(event)
+                clip = directory / clip_name if clip_name else None
+                if clip is not None and clip.is_file():
+                    self._paths[event] = clip
+                    continue
                 path = directory / f"{event}.wav"
                 if not path.is_file():
                     _write_effect(path, event)
                 self._paths[event] = path
-            for event, name in [('happy', 'sunshine'), ('sad', 'lebron_lebron'), ('angry', 'pu_pu_pu')]:
-                clip = directory / f'{name}.wav'
-                if clip.is_file():
-                    self._paths[event] = clip
             try:
                 import winsound
                 self._winsound = winsound
