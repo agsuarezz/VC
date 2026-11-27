@@ -1,0 +1,575 @@
+{
+  "dataset": "JAFFE",
+  "dataset_sha256": "3d8bcdffe0a7173153decde1dbb9a91388413fd29638ae82cab88a5255a12779",
+  "label_order": [
+    "happy",
+    "sad",
+    "angry",
+    "surprise",
+    "neutral"
+  ],
+  "subjects": {
+    "train": [
+      "KA",
+      "KM",
+      "KR",
+      "NA",
+      "NM",
+      "TM"
+    ],
+    "val": [
+      "MK",
+      "YM"
+    ],
+    "test": [
+      "KL",
+      "UY"
+    ]
+  },
+  "counts": {
+    "train": 92,
+    "val": 30,
+    "test": 30
+  },
+  "environment": {
+    "python": "3.12.10",
+    "sklearn": "1.6.1",
+    "platform": "Windows-11-10.0.26300-SP0",
+    "processor": "AMD64 Family 25 Model 97 Stepping 2, AuthenticAMD",
+    "threads": 1
+  },
+  "protocol": "Selection by validation macro F1; train only; shared 128 features; historical holdout.",
+  "extraction": {
+    "mean_ms": 9.051193337654695,
+    "median_ms": 8.647549984743819,
+    "p95_ms": 9.615309990476817
+  },
+  "models": {
+    "SVM": {
+      "accuracy": 0.6666666666666666,
+      "macro_f1": 0.6283559577677225,
+      "confusion_matrix": [
+        [
+          5,
+          1,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          6,
+          0,
+          0,
+          0
+        ],
+        [
+          2,
+          3,
+          1,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          3,
+          3
+        ],
+        [
+          0,
+          1,
+          0,
+          0,
+          5
+        ]
+      ],
+      "by_class": {
+        "happy": {
+          "precision": 0.7142857142857143,
+          "recall": 0.8333333333333334,
+          "f1-score": 0.7692307692307693,
+          "support": 6.0
+        },
+        "sad": {
+          "precision": 0.5454545454545454,
+          "recall": 1.0,
+          "f1-score": 0.7058823529411765,
+          "support": 6.0
+        },
+        "angry": {
+          "precision": 1.0,
+          "recall": 0.16666666666666666,
+          "f1-score": 0.2857142857142857,
+          "support": 6.0
+        },
+        "surprise": {
+          "precision": 1.0,
+          "recall": 0.5,
+          "f1-score": 0.6666666666666666,
+          "support": 6.0
+        },
+        "neutral": {
+          "precision": 0.625,
+          "recall": 0.8333333333333334,
+          "f1-score": 0.7142857142857143,
+          "support": 6.0
+        },
+        "accuracy": 0.6666666666666666,
+        "macro avg": {
+          "precision": 0.7769480519480519,
+          "recall": 0.6666666666666667,
+          "f1-score": 0.6283559577677225,
+          "support": 30.0
+        },
+        "weighted avg": {
+          "precision": 0.7769480519480519,
+          "recall": 0.6666666666666666,
+          "f1-score": 0.6283559577677225,
+          "support": 30.0
+        }
+      },
+      "selected": {
+        "configuration": "C=0.01",
+        "validation_macro_f1": 0.897862137862138,
+        "training_seconds": 0.0026064999983645976
+      },
+      "candidates": [
+        {
+          "configuration": "C=0.01",
+          "validation_macro_f1": 0.897862137862138,
+          "training_seconds": 0.0026064999983645976
+        },
+        {
+          "configuration": "C=0.1",
+          "validation_macro_f1": 0.8653679653679653,
+          "training_seconds": 0.0013498999760486186
+        },
+        {
+          "configuration": "C=1.0",
+          "validation_macro_f1": 0.798001998001998,
+          "training_seconds": 0.0012706000125035644
+        }
+      ],
+      "classifier_latency": {
+        "mean_ms": 0.21478999988175929,
+        "median_ms": 0.19585000700317323,
+        "p95_ms": 0.30846498848404735
+      },
+      "total_latency": {
+        "mean_ms": 9.265983337536454,
+        "median_ms": 8.885600022040308,
+        "p95_ms": 9.841070004040375
+      },
+      "model_bytes": 49253,
+      "predictions": [
+        "happy",
+        "happy",
+        "angry",
+        "happy",
+        "happy",
+        "happy",
+        "neutral",
+        "neutral",
+        "neutral",
+        "sad",
+        "sad",
+        "sad",
+        "surprise",
+        "surprise",
+        "surprise",
+        "sad",
+        "sad",
+        "sad",
+        "sad",
+        "happy",
+        "happy",
+        "sad",
+        "neutral",
+        "neutral",
+        "sad",
+        "sad",
+        "sad",
+        "neutral",
+        "neutral",
+        "neutral"
+      ],
+      "confusion_labels": [
+        "happy",
+        "sad",
+        "angry",
+        "surprise",
+        "neutral"
+      ]
+    },
+    "MLP": {
+      "accuracy": 0.7,
+      "macro_f1": 0.6547619047619048,
+      "confusion_matrix": [
+        [
+          6,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          6,
+          0,
+          0,
+          0
+        ],
+        [
+          2,
+          3,
+          1,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          3,
+          3
+        ],
+        [
+          0,
+          1,
+          0,
+          0,
+          5
+        ]
+      ],
+      "by_class": {
+        "happy": {
+          "precision": 0.75,
+          "recall": 1.0,
+          "f1-score": 0.8571428571428571,
+          "support": 6.0
+        },
+        "sad": {
+          "precision": 0.6,
+          "recall": 1.0,
+          "f1-score": 0.75,
+          "support": 6.0
+        },
+        "angry": {
+          "precision": 1.0,
+          "recall": 0.16666666666666666,
+          "f1-score": 0.2857142857142857,
+          "support": 6.0
+        },
+        "surprise": {
+          "precision": 1.0,
+          "recall": 0.5,
+          "f1-score": 0.6666666666666666,
+          "support": 6.0
+        },
+        "neutral": {
+          "precision": 0.625,
+          "recall": 0.8333333333333334,
+          "f1-score": 0.7142857142857143,
+          "support": 6.0
+        },
+        "accuracy": 0.7,
+        "macro avg": {
+          "precision": 0.795,
+          "recall": 0.7,
+          "f1-score": 0.6547619047619048,
+          "support": 30.0
+        },
+        "weighted avg": {
+          "precision": 0.795,
+          "recall": 0.7,
+          "f1-score": 0.6547619047619048,
+          "support": 30.0
+        }
+      },
+      "selected": {
+        "configuration": "hidden=(32,),alpha=1.0",
+        "validation_macro_f1": 0.8997668997668999,
+        "training_seconds": 0.15611330000683665
+      },
+      "candidates": [
+        {
+          "configuration": "hidden=(32,),alpha=0.1",
+          "validation_macro_f1": 0.8657342657342658,
+          "training_seconds": 0.0727193999919109
+        },
+        {
+          "configuration": "hidden=(32,),alpha=1.0",
+          "validation_macro_f1": 0.8997668997668999,
+          "training_seconds": 0.15611330000683665
+        },
+        {
+          "configuration": "hidden=(64, 32),alpha=0.1",
+          "validation_macro_f1": 0.8270929070929072,
+          "training_seconds": 0.10719179996522143
+        },
+        {
+          "configuration": "hidden=(64, 32),alpha=1.0",
+          "validation_macro_f1": 0.8653679653679653,
+          "training_seconds": 0.6075291000306606
+        }
+      ],
+      "classifier_latency": {
+        "mean_ms": 0.1938466700570037,
+        "median_ms": 0.17940002726390958,
+        "p95_ms": 0.26318498130422074
+      },
+      "total_latency": {
+        "mean_ms": 9.2450400077117,
+        "median_ms": 8.86825000634417,
+        "p95_ms": 9.858739978517406
+      },
+      "model_bytes": 56894,
+      "predictions": [
+        "happy",
+        "happy",
+        "angry",
+        "happy",
+        "happy",
+        "happy",
+        "neutral",
+        "neutral",
+        "neutral",
+        "sad",
+        "sad",
+        "sad",
+        "surprise",
+        "surprise",
+        "surprise",
+        "sad",
+        "sad",
+        "sad",
+        "happy",
+        "happy",
+        "happy",
+        "sad",
+        "neutral",
+        "neutral",
+        "sad",
+        "sad",
+        "sad",
+        "neutral",
+        "neutral",
+        "neutral"
+      ],
+      "parameters": 4293,
+      "iterations": 459,
+      "confusion_labels": [
+        "happy",
+        "sad",
+        "angry",
+        "surprise",
+        "neutral"
+      ]
+    },
+    "DeepFace": {
+      "accuracy": 0.5333333333333333,
+      "macro_f1": 0.49004329004329,
+      "confusion_labels": [
+        "happy",
+        "sad",
+        "angry",
+        "surprise",
+        "neutral"
+      ],
+      "confusion_matrix": [
+        [
+          3,
+          3,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          6,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          3,
+          0,
+          0,
+          3
+        ],
+        [
+          0,
+          2,
+          0,
+          3,
+          1
+        ],
+        [
+          0,
+          2,
+          0,
+          0,
+          4
+        ]
+      ],
+      "by_class": {
+        "happy": {
+          "precision": 1.0,
+          "recall": 0.5,
+          "f1-score": 0.6666666666666666,
+          "support": 6.0
+        },
+        "sad": {
+          "precision": 0.375,
+          "recall": 1.0,
+          "f1-score": 0.5454545454545454,
+          "support": 6.0
+        },
+        "angry": {
+          "precision": 0.0,
+          "recall": 0.0,
+          "f1-score": 0.0,
+          "support": 6.0
+        },
+        "surprise": {
+          "precision": 1.0,
+          "recall": 0.5,
+          "f1-score": 0.6666666666666666,
+          "support": 6.0
+        },
+        "neutral": {
+          "precision": 0.5,
+          "recall": 0.6666666666666666,
+          "f1-score": 0.5714285714285714,
+          "support": 6.0
+        },
+        "accuracy": 0.5333333333333333,
+        "macro avg": {
+          "precision": 0.575,
+          "recall": 0.5333333333333333,
+          "f1-score": 0.49004329004329,
+          "support": 30.0
+        },
+        "weighted avg": {
+          "precision": 0.575,
+          "recall": 0.5333333333333333,
+          "f1-score": 0.49004329004329006,
+          "support": 30.0
+        }
+      },
+      "total_latency": {
+        "mean_ms": 4.168616669873397,
+        "median_ms": 4.119300021557137,
+        "p95_ms": 4.6996449760627
+      },
+      "predictions": [
+        "neutral",
+        "neutral",
+        "neutral",
+        "happy",
+        "happy",
+        "happy",
+        "neutral",
+        "neutral",
+        "neutral",
+        "sad",
+        "sad",
+        "sad",
+        "surprise",
+        "surprise",
+        "surprise",
+        "sad",
+        "sad",
+        "sad",
+        "sad",
+        "sad",
+        "sad",
+        "sad",
+        "neutral",
+        "sad",
+        "sad",
+        "sad",
+        "sad",
+        "neutral",
+        "sad",
+        "sad"
+      ],
+      "outside_target_classes": 0,
+      "backend": "skip (mismos recortes, sin otro detector)",
+      "pretrained": true,
+      "versions": {
+        "deepface": "0.0.93",
+        "tensorflow": "2.18.0",
+        "tf-keras": "2.18.0"
+      }
+    }
+  },
+  "evaluation_names": [
+    "KL.AN1.167.tiff",
+    "KL.AN2.168.tiff",
+    "KL.AN3.169.tiff",
+    "KL.HA1.158.tiff",
+    "KL.HA2.159.tiff",
+    "KL.HA3.160.tiff",
+    "KL.NE1.155.tiff",
+    "KL.NE2.156.tiff",
+    "KL.NE3.157.tiff",
+    "KL.SA1.161.tiff",
+    "KL.SA2.162.tiff",
+    "KL.SA3.163.tiff",
+    "KL.SU1.164.tiff",
+    "KL.SU2.165.tiff",
+    "KL.SU3.166.tiff",
+    "UY.AN1.146.tiff",
+    "UY.AN2.147.tiff",
+    "UY.AN3.148.tiff",
+    "UY.HA1.137.tiff",
+    "UY.HA2.138.tiff",
+    "UY.HA3.139.tiff",
+    "UY.NE1.134.tiff",
+    "UY.NE2.135.tiff",
+    "UY.NE3.136.tiff",
+    "UY.SA1.140.tiff",
+    "UY.SA2.141.tiff",
+    "UY.SA3.142.tiff",
+    "UY.SU1.143.tiff",
+    "UY.SU2.144.tiff",
+    "UY.SU3.145.tiff"
+  ],
+  "truth": [
+    "angry",
+    "angry",
+    "angry",
+    "happy",
+    "happy",
+    "happy",
+    "neutral",
+    "neutral",
+    "neutral",
+    "sad",
+    "sad",
+    "sad",
+    "surprise",
+    "surprise",
+    "surprise",
+    "angry",
+    "angry",
+    "angry",
+    "happy",
+    "happy",
+    "happy",
+    "neutral",
+    "neutral",
+    "neutral",
+    "sad",
+    "sad",
+    "sad",
+    "surprise",
+    "surprise",
+    "surprise"
+  ],
+  "dataset_content_sha256": "1d7d0b821ea493d6bc2685c75ebed1dadcac7e664fd91aaac2e8bfcdfbff2bd8"
+}

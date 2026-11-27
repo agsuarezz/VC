@@ -1,0 +1,11 @@
+# Entorno separado para ejecutar DeepFace, sin modificar el de los filtros.
+numpy==1.26.4
+opencv-python==4.11.0.86
+scikit-learn==1.6.1
+scikit-image==0.25.2
+joblib==1.4.2
+deepface==0.0.93
+tensorflow==2.18.0
+tf-keras==2.18.0
+retina-face==0.0.17
+pandas==2.2.3

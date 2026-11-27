@@ -1,9 +1,0 @@
-Procesados 12 fotogramas.
-WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
-W0000 00:00:1795282018.155146   29144 face_landmarker_graph.cc:174] Sets FaceBlendshapesGraph acceleration to xnnpack by default.
-INFO: Created TensorFlow Lite XNNPACK delegate for CPU.
-W0000 00:00:1795282018.161049    7428 inference_feedback_manager.cc:114] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
-W0000 00:00:1795282018.171324    6216 inference_feedback_manager.cc:114] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
-W0000 00:00:1795282018.189244   29644 inference_feedback_manager.cc:114] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
-W0000 00:00:1795282018.201015   20008 inference_feedback_manager.cc:114] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
-W0000 00:00:1795282019.234994   29644 landmark_projection_calculator.cc:186] Using NORM_RECT without IMAGE_DIMENSIONS is only supported for the square ROI. Provide IMAGE_DIMENSIONS or use PROJECTION_MATRIX.
