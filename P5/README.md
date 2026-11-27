@@ -13,8 +13,8 @@
 
 En esta práctica se desarrollan dos prototipos que reaccionan a información extraída del rostro y de las manos mediante **MediaPipe y OpenCV**:
 
-1. **Filtro de LeBron** (`app.py`): añade barba y corona, reconoce cinco expresiones con un modelo entrenado para la práctica y activa efectos visuales y sonidos. También reconoce los gestos de tiro y lanzamiento de talco.
-2. **Filtro del mago** (`app_mago.py`): permite dibujar figuras con el índice para activar transformaciones inspiradas en Doctor Strange, Super Saiyan y Sharingan. Los efectos se ajustan a los landmarks faciales.
+1. **Filtro de LeBron** (`filtro_lebron.py`): añade barba y corona, reconoce cinco expresiones con un modelo entrenado para la práctica y activa efectos visuales y sonidos. También reconoce los gestos de tiro y lanzamiento de talco.
+2. **Filtro del mago** (`filtro_mago.py`): permite dibujar figuras con el índice para activar transformaciones inspiradas en Doctor Strange, Super Saiyan y Sharingan. Los efectos se ajustan a los landmarks faciales.
 
 Se incluyen los dos extras del enunciado: **comparación entre un clasificador clásico y una red neuronal propia**, y **comparación con `DeepFace.analyze`**. Las métricas del modelo usado por LeBron y las de los extras corresponden a experimentos diferentes.
 
@@ -33,7 +33,7 @@ conda activate vc_p5
 python -m pip install -r requirements.txt
 ```
 
-Con `vc_p5` activo, ejecuta `python app.py` para **LeBron** o `python app_mago.py` para **el mago**. Pulsa **Q** o **Esc** para cerrar un filtro antes de abrir el otro. Cuando abras otra terminal, vuelve a entrar en `P5` y ejecuta `conda activate vc_p5`.
+Con `vc_p5` activo, ejecuta `python filtro_lebron.py` para **LeBron** o `python filtro_mago.py` para **el mago**. Pulsa **Q** o **Esc** para cerrar un filtro antes de abrir el otro. Cuando abras otra terminal, vuelve a entrar en `P5` y ejecuta `conda activate vc_p5`.
 
 Para seleccionar otra cámara, añade `--camera 1`. Si no se abre, comprueba los permisos y cierra otras aplicaciones que estén usando la webcam. La instalación de `requirements.txt` ya proporciona `cv2` mediante `opencv-contrib-python`.
 
@@ -83,6 +83,14 @@ Los sonidos se activan al estabilizarse un cambio de expresión y se reproducen 
 
 El reconocimiento utiliza el desplazamiento temporal y tolera pérdidas breves de detección. La pausa entre gestos es de 1,15 segundos; el tiro requiere una subida mínima del 7,5 % de la altura del fotograma y el talco, del 9 % en ambas manos.
 
+### Capturas del filtro de LeBron
+
+| Neutral | Alegría | Tristeza |
+| :---: | :---: | :---: |
+| ![LeBron Neutral](assets/capturas/lebron_neutral.png) | ![LeBron Alegría](assets/capturas/lebron_alegria.png) | ![LeBron Tristeza](assets/capturas/lebron_tristeza.png) |
+| **Enfado** | **Sorpresa (Taco Tuesday)** | **Gesto de tiro** |
+| ![LeBron Enfado](assets/capturas/lebron_enfado.png) | ![LeBron Sorpresa](assets/capturas/lebron_sorpresa.png) | ![LeBron Tiro](assets/capturas/lebron_tiro.png) |
+
 ---
 
 ## 3. Prototipo 2: Filtro del Mago
@@ -97,6 +105,12 @@ Para lanzar un hechizo, deja **solo el índice extendido**, dibuja una figura gr
 | **Trazo no reconocido** | Power-Up fallido |
 
 La figura se reconoce por su geometría: cierre, proporciones, área, perímetro y aproximación poligonal. Las manos seleccionan el poder y los landmarks faciales sitúan sus elementos sobre el rostro.
+
+### Capturas del filtro del Mago
+
+| Doctor Strange (Círculo) | Super Saiyan (Cuadrado) | Sharingan (Triángulo) |
+| :---: | :---: | :---: |
+| ![Mago Doctor Strange](assets/capturas/mago_doctor_strange.png) | ![Mago Super Saiyan](assets/capturas/mago_super_saiyan.png) | ![Mago Sharingan](assets/capturas/mago_sharingan.png) |
 
 ---
 
@@ -178,7 +192,7 @@ python scripts/train_fer2013.py --data data/fer2013.npz --destination data/fer20
 El segundo comando guarda `emotion_fer2013.joblib` y `metrics.json` en `data/fer2013_run`. La SVM anterior, `models/emotion.joblib`, se utiliza como referencia durante la evaluación. Para abrir el filtro con el modelo recién entrenado, indica su ruta.
 
 ```cmd
-python app.py --model data/fer2013_run/emotion_fer2013.joblib
+python filtro_lebron.py --model data/fer2013_run/emotion_fer2013.joblib
 ```
 
 Las figuras del README se pueden regenerar desde el informe incluido, sin descargar las imágenes. Para dibujar las del nuevo entrenamiento, indica su informe mediante `--metrics` y su carpeta de salida mediante `--output`.
@@ -293,8 +307,8 @@ DeepFace evita el entrenamiento y la selección de hiperparámetros, pero requie
 LeBron abre en pantalla completa; `--windowed` lo inicia en ventana. Las grabaciones se guardan en `recordings/`, en AVI MJPEG, **sin audio y con un máximo de 30 segundos** por clip. También puede indicarse una ruta desde el inicio:
 
 ```cmd
-python app.py --record recordings/lebron.avi
-python app_mago.py --record recordings/mago.avi
+python filtro_lebron.py --record recordings/lebron.avi
+python filtro_mago.py --record recordings/mago.avi
 ```
 
 El vídeo final solicitado por el enunciado debe reunir momentos de **ambos prototipos en un máximo de 30 segundos en total**, por ejemplo 15 segundos de cada uno. Para conservar los sonidos, utiliza una grabadora de pantalla que capture audio del sistema.
@@ -302,8 +316,8 @@ El vídeo final solicitado por el enunciado debe reunir momentos de **ambos prot
 Ambas aplicaciones admiten procesar vídeos sin ventana:
 
 ```cmd
-python app.py --video TU_VIDEO.avi --headless --mute --max-frames 60
-python app_mago.py --video TU_VIDEO.avi --headless --max-frames 60
+python filtro_lebron.py --video TU_VIDEO.avi --headless --mute --max-frames 60
+python filtro_mago.py --video TU_VIDEO.avi --headless --max-frames 60
 ```
 
 ---
@@ -312,11 +326,13 @@ python app_mago.py --video TU_VIDEO.avi --headless --max-frames 60
 
 ```text
 P5/
-├── app.py                      # Filtro de LeBron
-├── app_mago.py                 # Filtro del mago
+├── filtro_lebron.py            # Filtro de LeBron
+├── filtro_mago.py              # Filtro del mago
 ├── wizard_filter.py            # Reconocimiento de trazos y efectos del mago
 ├── lebron/                     # Rostro, manos, expresiones, audio y grabación
-├── assets/audio/               # Sonidos utilizados por LeBron
+├── assets/
+│   ├── audio/                  # Sonidos utilizados por LeBron
+│   └── capturas/               # Capturas de demostración de ambos filtros
 ├── models/                     # Extractores MediaPipe y modelos de expresiones
 ├── scripts/
 │   ├── prepare_dataset.py      # Preparación de JAFFE o FER2013
