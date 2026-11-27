@@ -1,6 +1,11 @@
+import importlib
+import importlib.util
 import os
+import shutil
 import sys
 import urllib.request
+
+import torch
 
 P4_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REPO = os.path.join(P4_ROOT, "RT-DETR", "rtdetrv2_pytorch")
@@ -9,28 +14,44 @@ if not os.path.isfile(os.path.join(REPO, "src", "core", "__init__.py")):
         "Falta el código de RT-DETR. Desde P4 ejecuta: "
         "git clone --depth 1 https://github.com/lyuwenyu/RT-DETR.git RT-DETR"
     )
-repo_abs = os.path.abspath(REPO)
-if repo_abs not in sys.path:
-    sys.path.insert(0, repo_abs)
-if "src" in sys.modules:
-    mod_file = getattr(sys.modules["src"], "__file__", None) or ""
-    if repo_abs.replace("\\", "/").lower() not in mod_file.replace("\\", "/").lower():
-        sys.modules.pop("src", None)
 
-import cv2
-import numpy as np
-import torch
-from PIL import Image
-from src.core import YAMLConfig
-from src.core.yaml_utils import load_config      # next to your YAMLConfig import
+
+def _import_rtdetr_core():
+    """Importa RT-DETR bajo un namespace aislado para no colisionar con P4/src."""
+    core_mod = sys.modules.get("_rtdetr_src.core")
+    if core_mod is not None:
+        return core_mod.YAMLConfig, core_mod.load_config
+
+    src_pkg_dir = os.path.join(REPO, "src")
+    init_py = os.path.join(src_pkg_dir, "__init__.py")
+    spec = importlib.util.spec_from_file_location(
+        "_rtdetr_src",
+        init_py,
+        submodule_search_locations=[src_pkg_dir],
+    )
+    if spec is None or spec.loader is None:
+        raise ImportError(f"No se pudo inicializar el paquete RT-DETR desde {src_pkg_dir}")
+
+    pkg = importlib.util.module_from_spec(spec)
+    sys.modules["_rtdetr_src"] = pkg
+    try:
+        spec.loader.exec_module(pkg)
+        core_mod = importlib.import_module("_rtdetr_src.core")
+    except Exception:
+        for key in list(sys.modules):
+            if key == "_rtdetr_src" or key.startswith("_rtdetr_src."):
+                sys.modules.pop(key, None)
+        raise
+    return core_mod.YAMLConfig, core_mod.load_config
+
+
+YAMLConfig, load_config = _import_rtdetr_core()
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Para usar el modelo, necesitamos descargar los pesos oficiales desde el Repositorio.
-# Actualmente, existen 8 modelos entrenados, divididos en dos familias y cuatro tamaños:
-# La familia RT-DETRv1 y la V2. 
-# Cada familia tiene cuatro tamaños, de menor a mayor, S,M,L y X.
-
+# Para usar el modelo, necesitamos descargar los pesos oficiales desde el repositorio.
+# Existen 10 configuraciones entrenadas (5 por familia: v1 y v2), con alias cortos s, m, l, x
+# y selección directa por nombre de backbone (r18, r34, r50m, r50, r101).
 # (config, tag de la release, fichero de pesos COCO)
 MODELS = {
     "v1": {
@@ -51,36 +72,66 @@ MODELS = {
 SIZE_ALIASES = {"s": "r18", "m": "r50m", "l": "r50", "x": "r101"}   # nombres cortos
 
 
+def _download_weights(url: str, dest_path: str) -> None:
+    """Descarga pesos de forma atómica evitando ficheros truncados tras cortes de red."""
+    weights_dir = os.path.dirname(dest_path)
+    os.makedirs(weights_dir, exist_ok=True)
+    tmp_path = f"{dest_path}.part"
+    try:
+        with urllib.request.urlopen(url, timeout=60) as resp, open(tmp_path, "wb") as out_f:
+            shutil.copyfileobj(resp, out_f)
+        if os.path.getsize(tmp_path) == 0:
+            raise IOError(f"El archivo descargado desde {url} está vacío.")
+        os.replace(tmp_path, dest_path)
+    except Exception:
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+        raise
+
+
 def load_rtdetr(family="v2", size="s", device=DEVICE):
+    if not isinstance(family, str) or not isinstance(size, str):
+        raise ValueError("family y size deben ser cadenas de texto (ej. family='v2', size='s').")
 
     family = family.lower()
     size = size.lower()
     print(f"Cargando RT-DETR familia {family!r}, tamaño {size!r} en {device}")
-    
-    size = SIZE_ALIASES[size] if size in SIZE_ALIASES else size
-    
+
+    size = SIZE_ALIASES.get(size, size)
+
     if family not in MODELS or size not in MODELS[family]:
-        raise ValueError(f"Modelo desconocido: {family}/{size}. Inserte familia v2 o v1 y tamaño s,m,l,x o r18,r34,r50m,r50,r101")
-    
-    # Sacamos el diccionario el archivo de configuración, y lo necesario para descargar los pesos.
-    
+        raise ValueError(
+            f"Modelo desconocido: {family}/{size}. Inserte familia v2 o v1 y tamaño s,m,l,x o r18,r34,r50m,r50,r101"
+        )
+
     cfg_name, tag, wfile = MODELS[family][size]
+    weights_path = os.path.join(P4_ROOT, "weights", wfile)
+    if not os.path.isfile(weights_path) or os.path.getsize(weights_path) == 0:
+        print(f"No se detectaron los pesos del modelo {family}/{size}. Descargando en {weights_path}...")
+        url = f"https://github.com/lyuwenyu/storage/releases/download/{tag}/{wfile}"
+        _download_weights(url, weights_path)
 
-    WEIGHTS = os.path.join(P4_ROOT, "weights", wfile)
-    if not os.path.exists(WEIGHTS):
-        print(f'No se detectaron los pesos del modelo {family}/{size}. Se estan descargando y guardando en {WEIGHTS}')
-        os.makedirs(os.path.join(P4_ROOT, "weights"), exist_ok=True)
-        urllib.request.urlretrieve(
-            f"https://github.com/lyuwenyu/storage/releases/download/{tag}/{wfile}", WEIGHTS)
+    # RT-DETR usa un diccionario mutable por defecto en load_config; limpiarlo evita arrastrar claves previas.
+    if load_config.__defaults__ and isinstance(load_config.__defaults__[0], dict):
+        load_config.__defaults__[0].clear()
 
-    
-    # Teniendo el archivo de configuración y los pesos descargados, cargamos el modelo y el postprocesador.
-    load_config.__defaults__[0].clear()
-    # El checkpoint completo ya incluye el backbone.
-    cfg = YAMLConfig(f"{REPO}/configs/{cfg_name}", PResNet={"pretrained": False})
-   
-    ckpt = torch.load(WEIGHTS, map_location="cpu", weights_only=True)
-    cfg.model.load_state_dict(ckpt["ema"]["module"] if "ema" in ckpt else ckpt["model"])
+    cfg_path = os.path.join(REPO, "configs", cfg_name)
+    cfg = YAMLConfig(cfg_path, PResNet={"pretrained": False})
+
+    ckpt = torch.load(weights_path, map_location="cpu", weights_only=True)
+    if isinstance(ckpt, dict) and isinstance(ckpt.get("ema"), dict) and "module" in ckpt["ema"]:
+        state_dict = ckpt["ema"]["module"]
+    elif isinstance(ckpt, dict) and "model" in ckpt:
+        state_dict = ckpt["model"]
+    elif isinstance(ckpt, dict):
+        state_dict = ckpt
+    else:
+        raise ValueError(f"Formato de checkpoint no reconocido en {weights_path}")
+
+    cfg.model.load_state_dict(state_dict)
     model = cfg.model.deploy().to(device).eval()
     postprocessor = cfg.postprocessor.deploy().to(device)
     return model, postprocessor

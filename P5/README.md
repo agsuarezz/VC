@@ -70,7 +70,7 @@ La barba y la corona se dibujan sobre el rostro. La expresión predominante acti
 | :--- | :--- | :--- |
 | **Alegría** | Sol junto al rostro | `sunshine.wav` |
 | **Tristeza** | Imagen en escala de grises | `lebron_lebron.wav` |
-| **Enfado** | Filtro y etiqueta de expresión | `bo_bo_boom.wav` |
+| **Enfado** | Llamas de fuego alrededor del rostro y en la base | `bo_bo_boom.wav` |
 | **Sorpresa** | Lluvia de tacos y Taco Tuesday | `taco_tuesday.wav` |
 | **Neutral** | Barba y corona sin reacción adicional | Silencio |
 

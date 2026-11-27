@@ -57,6 +57,7 @@ def main():
         FaceTracker,
         TacoRain,
         apply_sad_grayscale,
+        draw_angry_fire,
         draw_lebron_filter,
         draw_sun,
         draw_taco_tuesday,
@@ -152,6 +153,8 @@ def main():
             if observation is not None:
                 if label == 'happy':
                     draw_sun(frame, observation)
+                elif label == 'angry':
+                    draw_angry_fire(frame, observation, now)
                 draw_lebron_filter(frame, observation)
                 _, y, _, h = observation.bbox
                 face_y = (y + h / 2) / frame.shape[0]

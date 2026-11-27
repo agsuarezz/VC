@@ -35,6 +35,37 @@ C0142_CAR_COUNT_LINE = (440, 700, 1430, 1700)
 
 
 SPANISH_CONSONANTS = "BCDFGHJKLMNPRSTVWXYZ"
+VALID_OCR_MODES = {"hybrid", "fast_ocr", "easyocr", "smolvlm", "none"}
+CSV_INTERNAL_COLUMNS = [
+    "fotograma", "tipo_objeto", "confianza", "identificador_tracking",
+    "x1", "y1", "x2", "y2", "matrícula_en_su_caso", "confianza_matricula",
+    "mx1", "my1", "mx2", "my2", "texto_matricula",
+]
+CSV_OUTPUT_HEADERS = [
+    "fotograma", "tipo_objeto", "confianza", "identificador_tracking",
+    "x1", "y1", "x2", "y2", "matrícula_en_su_caso", "confianza",
+    "mx1", "my1", "mx2", "my2", "texto_matricula",
+]
+
+
+def _resolve_device(device) -> str:
+    """Normaliza la especificación de dispositivo con fallback seguro a CPU."""
+    if device is None:
+        return "cuda:0" if torch.cuda.is_available() else "cpu"
+    if isinstance(device, torch.device):
+        dev_str = str(device)
+    elif isinstance(device, int):
+        dev_str = f"cuda:{device}"
+    else:
+        dev_str = str(device).strip()
+    if dev_str.isdigit():
+        dev_str = f"cuda:{dev_str}"
+    if dev_str.lower() == "cuda":
+        dev_str = "cuda:0"
+    if dev_str.lower().startswith("cuda") and not torch.cuda.is_available():
+        print(f"Aviso: dispositivo '{dev_str}' solicitado sin CUDA disponible; usando 'cpu'.")
+        return "cpu"
+    return dev_str
 
 
 def clean_raw_plate_text(text: str) -> str:
@@ -54,8 +85,10 @@ def postprocess_spanish_plate(text: str) -> str:
         return ""
 
     # Descartar alucinaciones repetitivas de 4+ caracteres iguales consecutivos (ej. 1000000, 55555)
-    # sin rechazar matrículas válidas con tres dígitos iguales (ej. 2221FXK)
-    if re.search(r"(.)\1{3}", cleaned):
+    # sin rechazar matrículas válidas como 0000ABC o 2221FXK.
+    if re.search(r"(.)\1{3}", cleaned) and not (
+        re.match(r"^\d{4}[A-Z]{3}$", cleaned) and len(set(cleaned)) >= 3
+    ):
         return ""
 
     digit_fix = {
@@ -68,32 +101,46 @@ def postprocess_spanish_plate(text: str) -> str:
         "5": "S", "6": "G", "7": "Z", "8": "B", "9": "G",
         "O": "D", "I": "J", "Q": "G"
     }
+    prov_letter_fix = {
+        "0": "O", "1": "I", "2": "Z", "3": "B", "4": "A",
+        "5": "S", "6": "G", "7": "T", "8": "B", "9": "G",
+    }
 
     # Invertir lecturas de placa de 2 líneas leídas de abajo hacia arriba (LLLNNNN -> NNNNLLL)
     if re.match(r"^[A-Z]{3}\d{4}$", cleaned):
         cleaned = cleaned[3:] + cleaned[:3]
 
-    # Detectar formato provincial (1-2 letras + 4 dígitos aprox + 1-2 letras) para no recortarlo como eurobanda
-    is_provincial = bool(re.match(r"^[A-Z]{1,2}[0-9OQDCSBIZGT]{4}[A-Z0-9]{1,2}$", cleaned)) and not (
-        len(cleaned) == 8 and cleaned[0] == "E" and re.match(r"^[0-9OQDCSBIZGT]{4}[A-Z0-9]{3}$", cleaned[1:])
+    # Detectar formato provincial (1-2 letras + 4 dígitos aprox + 1-2 letras) sin confundir misreads O/I/Q + 3 dígitos + 3 letras
+    m_prov_cand = re.match(r"^([A-Z]{1,2})([0-9OQDCSBIZGT]{4})([A-Z0-9]{1,2})$", cleaned)
+    looks_like_nnnnlll_misread = (
+        len(cleaned) == 7
+        and cleaned[0] in ("O", "I", "Q")
+        and cleaned[1:4].isdigit()
+        and cleaned[4:].isalpha()
+    )
+    is_euroband_e = (
+        len(cleaned) == 8
+        and cleaned[0] == "E"
+        and bool(re.match(r"^[0-9OQDCSBIZGTLAUJ]{4}[A-Z0-9]{3}$", cleaned[1:]))
+    )
+    is_provincial = bool(m_prov_cand) and not is_euroband_e and not looks_like_nnnnlll_misread and (
+        sum(c.isdigit() for c in m_prov_cand.group(2)) >= 3
     )
 
     if not is_provincial and len(cleaned) == 8 and cleaned[0] in ("E", "I", "1", "0", "L"):
-        if re.match(r"^[0-9OQDCSBIZGT]{4}[A-Z0-9]{3}$", cleaned[1:]):
+        if re.match(r"^[0-9OQDCSBIZGTLAUJ]{4}[A-Z0-9]{3}$", cleaned[1:]):
             cleaned = cleaned[1:]
 
     if not is_provincial and len(cleaned) > 7:
-        m = re.search(r"[0-9OQDCSBIZGT]{4}[A-Z0-9]{3}", cleaned)
+        m = re.search(r"\d{4}[A-Z]{3}", cleaned) or re.search(r"[0-9OQDCSBIZGTLAUJ]{4}[A-Z0-9]{3}", cleaned)
         if m:
             cleaned = m.group(0)
 
     if is_provincial:
-        m_prov = re.match(r"^([A-Z]{1,2})([0-9OQDCSBIZGT]{4})([A-Z0-9]{1,2})$", cleaned)
-        if m_prov:
-            pref, nums, suf = m_prov.groups()
-            nums = "".join(digit_fix.get(c, c) for c in nums)
-            suf = "".join(letter_fix.get(c, c) for c in suf)
-            return pref + nums + suf
+        pref, nums, suf = m_prov_cand.groups()
+        nums = "".join(digit_fix.get(c, c) for c in nums)
+        suf = "".join(prov_letter_fix.get(c, c) for c in suf)
+        return pref + nums + suf
 
     if len(cleaned) == 7 and not cleaned[:2].isalpha():
         nums = "".join(digit_fix.get(c, c) for c in cleaned[:4])
@@ -109,9 +156,11 @@ def plate_text_quality_score(text: str) -> int:
     """
     if not text or len(text) < 6:
         return 0
-    if len(set(text)) < 3 or re.search(r"(.)\1{3}", text):
+    if len(set(text)) < 3:
         return 0
-    if text in ("1234", "12345", "123456", "1234567", "3456", "2345"):
+    if re.search(r"(.)\1{3}", text) and not re.match(r"^\d{4}[A-Z]{3}$", text):
+        return 0
+    if text in ("123456", "1234567"):
         return 0
     # Máxima prioridad: formato español estándar 4 dígitos + 3 consonantes (ej. 1965KBP)
     if re.match(rf"^\d{{4}}[{SPANISH_CONSONANTS}]{{3}}$", text):
@@ -165,6 +214,7 @@ def _select_consensus_plate(votes):
     target_len = len(best_str)
 
     same_len = [(t, sc, eng_conf, pw, det_conf) for (t, sc, eng_conf, pw, det_conf) in votes if len(t) == target_len and sc > 0]
+    is_best_provincial = bool(re.match(r"^[A-Z]{1,2}\d{4}[A-Z]{1,2}$", best_str))
     if len(same_len) >= 2 and target_len in (7, 8):
         pos_weights = [defaultdict(float) for _ in range(target_len)]
         for t, sc, eng_conf, pw, det_conf in same_len:
@@ -174,7 +224,7 @@ def _select_consensus_plate(votes):
 
         chars = []
         for idx, cw in enumerate(pos_weights):
-            if target_len == 7 and not best_str[:2].isalpha():
+            if target_len == 7 and not is_best_provincial and not best_str[:2].isalpha():
                 allowed = [c for c in cw if (c.isdigit() if idx < 4 else c in SPANISH_CONSONANTS)]
                 pool = allowed if allowed else list(cw.keys())
             else:
@@ -314,7 +364,9 @@ class PlateOCR:
     """
     def __init__(self, mode="hybrid", device="cuda:0"):
         self.mode = mode.lower() if mode else "none"
-        self.device = "cuda" if "cuda" in str(device) and torch.cuda.is_available() else "cpu"
+        if self.mode not in VALID_OCR_MODES:
+            raise ValueError(f"ocr_mode inválido: {mode!r}. Opciones válidas: {sorted(VALID_OCR_MODES)}")
+        self.device = _resolve_device(device)
         self.fast_reader = None
         self.easy_reader = None
         self.vlm_processor = None
@@ -336,13 +388,15 @@ class PlateOCR:
                     onnx_model_path=model_path, plate_config_path=config_path, device="cpu"
                 )
             except Exception as exc:
+                if self.mode == "fast_ocr":
+                    raise
                 print(f"Aviso: no se pudo cargar fast-plate-ocr ({exc}); usando motores alternativos.")
 
         if self.mode in ("easyocr", "hybrid"):
             import easyocr
             print(f"Cargando lector OCR clásico EasyOCR en {self.device}...")
             self.easy_reader = easyocr.Reader(
-                ["es", "en"], gpu=(self.device == "cuda"), verbose=False,
+                ["es", "en"], gpu=self.device.startswith("cuda"), verbose=False,
                 model_storage_directory=str(weights_dir / "easyocr" / "model"),
                 user_network_directory=str(weights_dir / "easyocr" / "user_network"),
             )
@@ -351,14 +405,29 @@ class PlateOCR:
             from transformers import AutoProcessor, AutoModelForImageTextToText
             model_id = "HuggingFaceTB/SmolVLM-Instruct"
             cache_dir = weights_dir / "huggingface" / "hub"
-            print(f"Cargando modelo VLM '{model_id}' en {self.device} (bfloat16)...")
+            use_cuda = self.device.startswith("cuda")
+            if use_cuda and torch.cuda.is_bf16_supported():
+                vlm_dtype = torch.bfloat16
+            elif use_cuda:
+                vlm_dtype = torch.float16
+            else:
+                vlm_dtype = torch.float32
+            print(f"Cargando modelo VLM '{model_id}' en {self.device} ({vlm_dtype})...")
             self.vlm_processor = AutoProcessor.from_pretrained(model_id, cache_dir=cache_dir)
-            self.vlm_model = AutoModelForImageTextToText.from_pretrained(
-                model_id,
-                cache_dir=cache_dir,
-                dtype=torch.bfloat16,
-                _attn_implementation="sdpa" if self.device == "cuda" else "eager"
-            ).to(self.device).eval()
+            try:
+                self.vlm_model = AutoModelForImageTextToText.from_pretrained(
+                    model_id,
+                    cache_dir=cache_dir,
+                    dtype=vlm_dtype,
+                    _attn_implementation="sdpa" if use_cuda else "eager",
+                ).to(self.device).eval()
+            except TypeError:
+                self.vlm_model = AutoModelForImageTextToText.from_pretrained(
+                    model_id,
+                    cache_dir=cache_dir,
+                    torch_dtype=vlm_dtype,
+                    _attn_implementation="sdpa" if use_cuda else "eager",
+                ).to(self.device).eval()
             messages = [
                 {
                     "role": "user",
@@ -397,11 +466,17 @@ class PlateOCR:
             if not out:
                 continue
             pred = out[0]
-            raw = pred.plate.replace("_", "").strip().upper()
+            raw_plate = getattr(pred, "plate", "") or ""
+            valid_indices = [i for i, ch in enumerate(raw_plate) if ch != "_" and not ch.isspace()]
+            raw = "".join(raw_plate[i] for i in valid_indices).upper()
             if not raw:
                 continue
-            probs = pred.char_probs[:len(raw)]
-            eng_conf = float(np.mean(probs)) if len(probs) > 0 else 0.0
+            char_probs = getattr(pred, "char_probs", None)
+            if char_probs is not None:
+                probs = [char_probs[i] for i in valid_indices if i < len(char_probs)]
+                eng_conf = float(np.mean(probs)) if probs else 0.0
+            else:
+                eng_conf = 0.0
             cand = postprocess_spanish_plate(raw)
             sc = plate_text_quality_score(cand)
             if (sc, eng_conf) > (best[1], best[2]):
@@ -445,7 +520,12 @@ class PlateOCR:
             scale = max(2.0, 180.0 / max(1, cw))
             var_bgr = cv2.resize(self._enhance_crop(var_bgr, pad=True), (0, 0), fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
         pil_img = Image.fromarray(cv2.cvtColor(var_bgr, cv2.COLOR_BGR2RGB))
-        inputs = self.vlm_processor(text=self.vlm_prompt, images=[pil_img], return_tensors="pt").to(self.device)
+        raw_inputs = self.vlm_processor(text=self.vlm_prompt, images=[pil_img], return_tensors="pt")
+        model_dtype = next(self.vlm_model.parameters()).dtype
+        inputs = {
+            k: (v.to(device=self.device, dtype=model_dtype) if torch.is_floating_point(v) else v.to(self.device))
+            for k, v in raw_inputs.items()
+        }
         with torch.no_grad():
             out_ids = self.vlm_model.generate(**inputs, max_new_tokens=12, do_sample=False)
         ans = self.vlm_processor.batch_decode(
@@ -677,20 +757,21 @@ class TrafficAnalyzer:
         device="cuda:0",
         ocr_mode="hybrid"
     ):
-        print(f"Inicializando TrafficAnalyzer con {general_model_path} (imgsz={imgsz}) en {device}...")
-        self.device = device
+        resolved_device = _resolve_device(device)
+        print(f"Inicializando TrafficAnalyzer con {general_model_path} (imgsz={imgsz}) en {resolved_device}...")
+        self.device = resolved_device
         self.conf_thres = conf_thres
         self.imgsz = imgsz
 
         self.general_model = YOLO(general_model_path)
 
-        self.plate_model = YOLO(plate_model_path) if plate_model_path and os.path.exists(plate_model_path) else None
+        self.plate_model = YOLO(plate_model_path) if plate_model_path and os.path.isfile(plate_model_path) else None
         if self.plate_model:
             print(f"Detector de matrículas cargado: {plate_model_path}")
         else:
-            print("Detector de matrículas por Deep Learning no disponible aún. Usando método de contornos.")
+            print("Detector de matrículas por Deep Learning no disponible; active use_contour_plates=True para contornos.")
 
-        self.ocr = PlateOCR(mode=ocr_mode, device=device) if ocr_mode and ocr_mode != "none" else None
+        self.ocr = PlateOCR(mode=ocr_mode, device=resolved_device) if ocr_mode and ocr_mode.lower() != "none" else None
 
     def _detect_frame_plates(self, frame, vehicles, imgsz):
         results = self.plate_model(frame, conf=0.25, imgsz=imgsz, device=self.device, verbose=False)
@@ -838,11 +919,15 @@ class TrafficAnalyzer:
                 if v_id not in plates_in_frame and (
                     anonymize or refresh_plates or v_id not in state["unique_vehicles_with_plate"]
                 ):
-                    vcrop = frame[vy1:vy2, vx1:vx2]
+                    cx1_v, cy1_v = max(0, vx1), max(0, vy1)
+                    cx2_v, cy2_v = min(width, vx2), min(height, vy2)
+                    if cx2_v <= cx1_v or cy2_v <= cy1_v:
+                        continue
+                    vcrop = frame[cy1_v:cy2_v, cx1_v:cx2_v]
                     cbox = detect_plate_contours(vcrop)
                     if cbox:
                         cx1, cy1, cx2, cy2 = cbox
-                        plates_in_frame[v_id] = (vx1 + cx1, vy1 + cy1, vx1 + cx2, vy1 + cy2, 0.65, "")
+                        plates_in_frame[v_id] = (cx1_v + cx1, cy1_v + cy1, cx1_v + cx2, cy1_v + cy2, 0.65, "")
 
         if self.ocr is not None and not anonymize:
             for v_id, (mx1, my1, mx2, my2, mconf, mtext) in list(plates_in_frame.items()):
@@ -954,8 +1039,8 @@ class TrafficAnalyzer:
         height = annotated_frame.shape[0]
 
         for (vx1, vy1, vx2, vy2, v_id, v_conf, v_cls) in current_vehicles:
-            np.random.seed(v_id * 53 + 7)
-            vcolor = tuple(int(c) for c in np.random.randint(50, 230, 3).tolist())
+            rng = np.random.default_rng(abs(int(v_id)) * 53 + 7)
+            vcolor = tuple(int(c) for c in rng.integers(50, 230, 3).tolist())
             cv2.rectangle(annotated_frame, (vx1, vy1), (vx2, vy2), vcolor, 2)
 
             plate_txt = vehicle_plate_texts.get(v_id, "")
@@ -986,10 +1071,14 @@ class TrafficAnalyzer:
                     cv2.putText(annotated_frame, p_lbl, (mx1 + 2, ty),
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.48, (0, 255, 255), 1, cv2.LINE_AA)
 
-        hud_bg = np.zeros((75, width, 3), dtype=np.uint8)
-        cv2.rectangle(hud_bg, (0, 0), (width, 75), (20, 20, 20), -1)
-        cv2.line(hud_bg, (0, 74), (width, 74), (0, 180, 255), 2)
-        annotated_frame[0:75, 0:width] = cv2.addWeighted(annotated_frame[0:75, 0:width], 0.25, hud_bg, 0.75, 0)
+        hud_h = min(75, height)
+        if hud_h > 0:
+            hud_bg = np.zeros((hud_h, width, 3), dtype=np.uint8)
+            cv2.rectangle(hud_bg, (0, 0), (width, hud_h), (20, 20, 20), -1)
+            cv2.line(hud_bg, (0, hud_h - 1), (width, hud_h - 1), (0, 180, 255), 2)
+            annotated_frame[0:hud_h, 0:width] = cv2.addWeighted(
+                annotated_frame[0:hud_h, 0:width], 0.25, hud_bg, 0.75, 0
+            )
 
         vehicle_breakdown = Counter(state["vehicle_classes"].values())
         state["vehicle_breakdown"] = vehicle_breakdown
@@ -1101,149 +1190,166 @@ class TrafficAnalyzer:
         lookahead_frames=30,
         display=False
     ):
-        cap = cv2.VideoCapture(video_path)
+        if max_frames is not None:
+            max_frames = int(max_frames)
+            if max_frames < 0:
+                raise ValueError(f"max_frames debe ser >= 0 (recibido: {max_frames})")
+
+        if not Path(TRAFFIC_TRACKER).is_file():
+            raise FileNotFoundError(f"No se encontró la configuración del tracker: {TRAFFIC_TRACKER}")
+
+        cap = cv2.VideoCapture(str(video_path))
         if not cap.isOpened():
             raise FileNotFoundError(f"No se pudo abrir el vídeo: {video_path}")
 
-        fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
-        width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        native_plate_size = min(1920, max(width, height))
-        anchors = parking_boxes(video_path, width, height)
-        parking = ParkingIdentity(anchors) if anchors else None
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        if max_frames and max_frames < total_frames:
-            total_frames = max_frames
-
         writer = None
-        if output_video_path:
-            out_v_dir = os.path.dirname(os.path.abspath(output_video_path))
-            if out_v_dir:
-                os.makedirs(out_v_dir, exist_ok=True)
-            fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-            writer = cv2.VideoWriter(output_video_path, fourcc, fps, (width, height))
+        try:
+            raw_fps = cap.get(cv2.CAP_PROP_FPS)
+            fps = float(raw_fps) if (raw_fps is not None and math.isfinite(raw_fps) and raw_fps > 0) else 25.0
+            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            if width <= 0 or height <= 0:
+                raise ValueError(f"Dimensiones de vídeo inválidas ({width}x{height}) en {video_path}")
 
-        motion_filter = VehicleMotionFilter(min_span_px=motion_min_span) if only_moving else None
-        effective_lookahead = max(0, int(lookahead_frames)) if motion_filter is not None else 0
-        pending_frames = deque()
+            native_plate_size = min(1920, max(width, height))
+            anchors = parking_boxes(video_path, width, height)
+            parking = ParkingIdentity(anchors) if anchors else None
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            if max_frames is not None and (total_frames <= 0 or max_frames < total_frames):
+                total_frames = max_frames
 
-        car_count_line = None
-        if Path(video_path).stem.casefold() == "c0142":
-            line_y, left_x, split_x, right_x = C0142_CAR_COUNT_LINE
-            car_count_line = (
-                round(line_y * height / 1080),
-                round(left_x * width / 1920),
-                round(split_x * width / 1920),
-                round(right_x * width / 1920),
-            )
+            if output_video_path:
+                out_v_dir = os.path.dirname(os.path.abspath(output_video_path))
+                if out_v_dir:
+                    os.makedirs(out_v_dir, exist_ok=True)
+                fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+                writer = cv2.VideoWriter(str(output_video_path), fourcc, fps, (width, height))
+                if not writer.isOpened():
+                    raise RuntimeError(f"No se pudo abrir VideoWriter en: {output_video_path}")
 
-        state = {
-            "unique_persons": set(),
-            "vehicle_class_votes": defaultdict(Counter),
-            "vehicle_classes": {},
-            "vehicle_breakdown": Counter(),
-            "unique_vehicles_with_plate": set(),
-            "secondary_observations": {},
-            "plate_offsets": {},
-            "vehicle_plate_texts": {},
-            "vehicle_plate_scores": defaultdict(int),
-            "vehicle_plate_confs": defaultdict(float),
-            "vehicle_plate_votes": defaultdict(list),
-            "vehicle_last_ocr_frame": {},
-            "vehicle_vlm_attempts": defaultdict(int),
-            "vehicle_best_plate_w": defaultdict(int),
-            "car_count_line": car_count_line,
-            "car_positions": {},
-            "counted_cars": set(),
-            "cars_towards_camera": 0,
-            "cars_away_from_camera": 0,
-            "csv_records": [],
-            "first_plate_record_idx": {},
-            "emitted_frames": 0,
-        }
+            # Reiniciar estado interno del tracker BoT-SORT entre ejecuciones sucesivas.
+            predictor = getattr(self.general_model, "predictor", None)
+            if predictor is not None and hasattr(predictor, "trackers"):
+                del predictor.trackers
 
-        mode_desc = f"solo en movimiento (umbral={motion_min_span:.0f}px, lookahead={effective_lookahead}f)" if only_moving else "todos (incluye aparcados)"
-        print(f"\nIniciando procesamiento de '{os.path.basename(video_path)}' [{mode_desc}]")
-        print(f"Resolución: {width}x{height} | FPS: {fps:.2f} | Fotogramas a procesar: {total_frames}")
+            motion_filter = VehicleMotionFilter(min_span_px=motion_min_span) if only_moving else None
+            effective_lookahead = max(0, int(lookahead_frames)) if motion_filter is not None else 0
+            pending_frames = deque()
 
-        frame_idx = 0
-        stopped_early = False
-        classes_to_track = [COCO_PERSON_CLASS] + list(COCO_VEHICLE_CLASSES.keys())
+            car_count_line = None
+            if Path(video_path).stem.casefold() == "c0142":
+                line_y, left_x, split_x, right_x = C0142_CAR_COUNT_LINE
+                car_count_line = (
+                    round(line_y * height / 1080),
+                    round(left_x * width / 1920),
+                    round(split_x * width / 1920),
+                    round(right_x * width / 1920),
+                )
 
-        while cap.isOpened():
-            ret, frame = cap.read()
-            if not ret or (max_frames and frame_idx >= max_frames):
-                break
+            state = {
+                "unique_persons": set(),
+                "vehicle_class_votes": defaultdict(Counter),
+                "vehicle_classes": {},
+                "vehicle_breakdown": Counter(),
+                "unique_vehicles_with_plate": set(),
+                "secondary_observations": {},
+                "plate_offsets": {},
+                "vehicle_plate_texts": {},
+                "vehicle_plate_scores": defaultdict(int),
+                "vehicle_plate_confs": defaultdict(float),
+                "vehicle_plate_votes": defaultdict(list),
+                "vehicle_last_ocr_frame": {},
+                "vehicle_vlm_attempts": defaultdict(int),
+                "vehicle_best_plate_w": defaultdict(int),
+                "car_count_line": car_count_line,
+                "car_positions": {},
+                "counted_cars": set(),
+                "cars_towards_camera": 0,
+                "cars_away_from_camera": 0,
+                "csv_records": [],
+                "first_plate_record_idx": {},
+                "emitted_frames": 0,
+            }
 
-            frame_idx += 1
-            track_results = self.general_model.track(
-                frame,
-                persist=True,
-                classes=classes_to_track,
-                conf=self.conf_thres,
-                imgsz=self.imgsz,
-                tracker=TRAFFIC_TRACKER,
-                device=self.device,
-                verbose=False
-            )
+            mode_desc = f"solo en movimiento (umbral={motion_min_span:.0f}px, lookahead={effective_lookahead}f)" if only_moving else "todos (incluye aparcados)"
+            print(f"\nIniciando procesamiento de '{os.path.basename(str(video_path))}' [{mode_desc}]")
+            print(f"Resolución: {width}x{height} | FPS: {fps:.2f} | Fotogramas a procesar: {total_frames}")
 
-            raw_persons = []
-            raw_vehicles = []
-            if track_results[0].boxes is not None and track_results[0].boxes.id is not None:
-                boxes = track_results[0].boxes.xyxy.cpu().numpy()
-                track_ids = track_results[0].boxes.id.int().cpu().tolist()
-                confidences = track_results[0].boxes.conf.cpu().numpy()
-                clses = track_results[0].boxes.cls.int().cpu().tolist()
+            frame_idx = 0
+            stopped_early = False
+            classes_to_track = [COCO_PERSON_CLASS] + list(COCO_VEHICLE_CLASSES.keys())
 
-                detections = zip(boxes, track_ids, confidences, clses)
-                if parking:
-                    detections = parking.relabel(detections, frame_idx)
-                for box, track_id, conf, cls_id in detections:
-                    x1, y1, x2, y2 = box.astype(int)
-                    if cls_id == COCO_PERSON_CLASS:
-                        raw_persons.append((x1, y1, x2, y2, track_id, conf, "person"))
-                    elif cls_id in COCO_VEHICLE_CLASSES:
-                        raw_vehicles.append((x1, y1, x2, y2, track_id, conf, COCO_VEHICLE_CLASSES[cls_id]))
+            while cap.isOpened():
+                if max_frames is not None and frame_idx >= max_frames:
+                    break
+                ret, frame = cap.read()
+                if not ret:
+                    break
 
-            if motion_filter is not None:
-                motion_filter.update(frame_idx, frame, raw_vehicles)
+                frame_idx += 1
+                track_results = self.general_model.track(
+                    frame,
+                    persist=True,
+                    classes=classes_to_track,
+                    conf=self.conf_thres,
+                    imgsz=self.imgsz,
+                    tracker=TRAFFIC_TRACKER,
+                    device=self.device,
+                    verbose=False
+                )
 
-            pending_frames.append((frame_idx, frame, raw_persons, raw_vehicles))
-            while len(pending_frames) > effective_lookahead:
+                raw_persons = []
+                raw_vehicles = []
+                if track_results[0].boxes is not None and track_results[0].boxes.id is not None:
+                    boxes = track_results[0].boxes.xyxy.cpu().numpy()
+                    track_ids = track_results[0].boxes.id.int().cpu().tolist()
+                    confidences = track_results[0].boxes.conf.cpu().numpy()
+                    clses = track_results[0].boxes.cls.int().cpu().tolist()
+
+                    detections = zip(boxes, track_ids, confidences, clses)
+                    if parking:
+                        detections = parking.relabel(detections, frame_idx)
+                    for box, track_id, conf, cls_id in detections:
+                        x1, y1, x2, y2 = box.astype(int)
+                        if cls_id == COCO_PERSON_CLASS:
+                            raw_persons.append((x1, y1, x2, y2, track_id, conf, "person"))
+                        elif cls_id in COCO_VEHICLE_CLASSES:
+                            raw_vehicles.append((x1, y1, x2, y2, track_id, conf, COCO_VEHICLE_CLASSES[cls_id]))
+
+                if motion_filter is not None:
+                    motion_filter.update(frame_idx, frame, raw_vehicles)
+
+                pending_frames.append((frame_idx, frame, raw_persons, raw_vehicles))
+                while len(pending_frames) > effective_lookahead:
+                    stopped_early = self._emit_buffered_frame(
+                        state, pending_frames.popleft(), motion_filter, parking,
+                        width, height, native_plate_size, total_frames,
+                        anonymize, use_contour_plates, writer, display
+                    )
+                    if stopped_early:
+                        break
+                if stopped_early:
+                    break
+
+            while not stopped_early and pending_frames:
                 stopped_early = self._emit_buffered_frame(
                     state, pending_frames.popleft(), motion_filter, parking,
                     width, height, native_plate_size, total_frames,
                     anonymize, use_contour_plates, writer, display
                 )
-                if stopped_early:
-                    break
-            if stopped_early:
-                break
+        finally:
+            cap.release()
+            if writer is not None:
+                writer.release()
+            if display:
+                cv2.destroyAllWindows()
 
-        while not stopped_early and pending_frames:
-            stopped_early = self._emit_buffered_frame(
-                state, pending_frames.popleft(), motion_filter, parking,
-                width, height, native_plate_size, total_frames,
-                anonymize, use_contour_plates, writer, display
-            )
-
-        cap.release()
-        if writer:
-            writer.release()
-        if display:
-            cv2.destroyAllWindows()
-
-        df = pd.DataFrame(state["csv_records"])
+        df = pd.DataFrame(state["csv_records"], columns=CSV_INTERNAL_COLUMNS)
         if output_csv_path:
             out_c_dir = os.path.dirname(os.path.abspath(output_csv_path))
             if out_c_dir:
                 os.makedirs(out_c_dir, exist_ok=True)
-            column_names = [
-                "fotograma", "tipo_objeto", "confianza", "identificador_tracking",
-                "x1", "y1", "x2", "y2", "matrícula_en_su_caso", "confianza",
-                "mx1", "my1", "mx2", "my2", "texto_matricula"
-            ]
-            df.to_csv(output_csv_path, index=False, header=column_names, encoding="utf-8")
+            df.to_csv(output_csv_path, index=False, header=CSV_OUTPUT_HEADERS, encoding="utf-8")
             print(f"\nArchivo CSV guardado en: {output_csv_path}")
 
         vehicle_classes = state["vehicle_classes"]

@@ -384,3 +384,144 @@ def draw_taco_tuesday(frame: np.ndarray, observation: FaceObservation | None, no
     cv2.putText(frame, label, (tx, ty), font, scale, (24, 58, 128), outline_thickness, cv2.LINE_AA)
     cv2.putText(frame, label, (tx, ty), font, scale, (35, 215, 255), thickness, cv2.LINE_AA)
     return frame
+
+
+def draw_angry_fire(frame: np.ndarray, observation: FaceObservation | None, now: float = 0.0) -> np.ndarray:
+    """Dibuja llamas animadas detrás del rostro, fuego en la base y brasas ascendentes."""
+    if frame is None or frame.size == 0:
+        return frame
+    h, w = frame.shape[:2]
+
+    # Sutil tinte cálido rojizo para reforzar la atmósfera de enfado
+    warm_tint = np.full_like(frame, (10, 24, 125))
+    cv2.addWeighted(frame, 0.90, warm_tint, 0.10, 0, dst=frame)
+
+    sw, sh = max(1, w // 4), max(1, h // 4)
+    sx_f, sy_f = sw / float(w), sh / float(h)
+    back_small = np.zeros((sh, sw, 3), dtype=np.uint8)
+    front_small = np.zeros((sh, sw, 3), dtype=np.uint8)
+    face_mask_small = None
+
+    def _flame_contour(cx, cy, half_w, height, sway, bend):
+        """Polígono orgánico en forma de lengua de fuego con base redondeada y curva S."""
+        return np.array([
+            (cx, cy - half_w * 0.42),
+            (cx - half_w * 0.72, cy - half_w * 0.15),
+            (cx - half_w, cy + height * 0.18),
+            (cx - half_w * 0.78 + bend * 0.35, cy + height * 0.48),
+            (cx - half_w * 0.34 + sway * 0.65, cy + height * 0.78),
+            (cx + sway, cy + height),
+            (cx + half_w * 0.34 + sway * 0.65, cy + height * 0.78),
+            (cx + half_w * 0.78 + bend * 0.35, cy + height * 0.48),
+            (cx + half_w, cy + height * 0.18),
+            (cx + half_w * 0.72, cy - half_w * 0.15),
+        ], dtype=np.float32)
+
+    # 1) Llamas principales envolviendo la cabeza (detrás de la silueta facial)
+    if observation is not None and len(observation.landmarks) >= 468:
+        points = observation.landmarks[:, :2] * frame.shape[1::-1]
+        eye_axis = points[263] - points[33]
+        eye_width = float(np.linalg.norm(eye_axis))
+        if np.isfinite(points).all() and eye_width >= 5:
+            across = eye_axis / eye_width
+            down = np.asarray((-across[1], across[0]), dtype=np.float32)
+            if np.dot(down, points[152] - points[10]) < 0:
+                down = -down
+            up = -down
+            head_center = 0.5 * (points[10] + points[152])
+            scale = max(eye_width, 0.55 * float(np.linalg.norm(points[152] - points[10])))
+
+            def local_small(xy):
+                world = head_center + scale * (xy[..., :1] * across + xy[..., 1:] * up)
+                return np.rint(world * (sx_f, sy_f)).astype(np.int32)
+
+            pulse = 1.0 + 0.07 * float(np.sin(now * 13.0))
+            flames = []
+            for k in range(13):
+                frac = (k / 12.0) * 2.0 - 1.0
+                flicker = 0.18 * float(np.sin(now * 11.5 + k * 1.9)) + 0.09 * float(np.cos(now * 16.5 + k * 2.7))
+                sway = 0.18 * float(np.sin(now * 8.5 + k * 1.4))
+                bend = 0.12 * float(np.cos(now * 10.0 + k * 2.1))
+                bx = frac * 0.88
+                # Base curvada siguiendo la mandíbula/mejillas para evitar cortes planos
+                by = -0.35 - 0.30 * (1.0 - frac * frac)
+                height = (1.58 - 0.30 * abs(frac) + flicker) * pulse
+                half_w = 0.28 + 0.08 * (1.0 - abs(frac))
+                flames.append((bx, by, half_w, height, sway, bend))
+
+            # Dibujar por capas (rojo -> naranja -> amarillo) para una mezcla continua
+            for color, w_mul, h_mul, s_mul in (
+                ((8, 36, 235), 1.00, 1.00, 1.00),
+                ((16, 128, 255), 0.72, 0.78, 0.76),
+                ((110, 232, 255), 0.42, 0.52, 0.48),
+            ):
+                polys = [
+                    local_small(_flame_contour(bx, by, hw * w_mul, fh * h_mul, sw_v * s_mul, bd * s_mul))
+                    for bx, by, hw, fh, sw_v, bd in flames
+                ]
+                cv2.fillPoly(back_small, polys, color, cv2.LINE_AA)
+
+            # Brasas ascendentes alrededor del rostro
+            for i in range(22):
+                phase = (now * 1.05 + i * 0.17) % 1.0
+                sx_e = (float(np.sin(i * 2.9 + now * 1.8)) * 1.32) * scale
+                sy_e = (-0.75 + phase * 2.55) * scale
+                pos = (head_center + sx_e * across + sy_e * up) * (sx_f, sy_f)
+                rad = max(1, int(round(scale * sx_f * 0.045 * (1.0 - phase * 0.6))))
+                color = (105, 235, 255) if i % 3 == 0 else (25, 135, 255)
+                cv2.circle(front_small, tuple(np.rint(pos).astype(int)), rad, color, -1, cv2.LINE_AA)
+
+            mask = np.zeros((sh, sw), dtype=np.uint8)
+            hull = cv2.convexHull(np.rint(points[:468] * (sx_f, sy_f)).astype(np.int32))
+            cv2.fillConvexPoly(mask, hull, 255, cv2.LINE_AA)
+            face_mask_small = cv2.GaussianBlur(mask, (0, 0), 2.5)
+
+    # 2) Lenguas de fuego suaves en el borde inferior del fotograma
+    base_count = 15
+    step_x = sw / float(base_count)
+    bottom_specs = []
+    for idx in range(base_count + 1):
+        cx = idx * step_x
+        flicker = 0.24 * float(np.sin(now * 10.5 + idx * 1.6)) + 0.14 * float(np.cos(now * 15.0 + idx * 2.3))
+        flame_h = sh * (0.14 + 0.045 * ((idx % 3) * 0.5)) * (1.0 + flicker)
+        flame_w = step_x * 0.92
+        sway = step_x * 0.26 * float(np.sin(now * 9.0 + idx * 1.3))
+        bend = step_x * 0.16 * float(np.cos(now * 11.0 + idx * 1.9))
+        bottom_specs.append((cx, flame_w, flame_h, sway, bend))
+
+    for color, w_mul, h_mul, s_mul in (
+        ((8, 40, 230), 1.00, 1.00, 1.00),
+        ((18, 132, 255), 0.70, 0.74, 0.72),
+        ((120, 238, 255), 0.38, 0.46, 0.45),
+    ):
+        polys = []
+        for cx, fw, fh, sw_v, bd in bottom_specs:
+            hw = fw * w_mul
+            hh = fh * h_mul
+            sw_s, bd_s = sw_v * s_mul, bd * s_mul
+            polys.append(np.rint([
+                (cx - hw, sh + 3),
+                (cx - hw * 0.80 + bd_s * 0.35, sh - hh * 0.38),
+                (cx - hw * 0.38 + sw_s * 0.65, sh - hh * 0.74),
+                (cx + sw_s, sh - hh),
+                (cx + hw * 0.38 + sw_s * 0.65, sh - hh * 0.74),
+                (cx + hw * 0.80 + bd_s * 0.35, sh - hh * 0.38),
+                (cx + hw, sh + 3),
+            ]).astype(np.int32))
+        cv2.fillPoly(front_small, polys, color, cv2.LINE_AA)
+
+    def _soften(layer_small: np.ndarray, sigma_inner: float, sigma_bloom: float) -> np.ndarray:
+        soft = cv2.GaussianBlur(layer_small, (0, 0), sigma_inner)
+        bloom = cv2.GaussianBlur(layer_small, (0, 0), sigma_bloom)
+        return cv2.addWeighted(soft, 0.65, bloom, 0.85, 0)
+
+    combined_small = _soften(front_small, 1.4, 4.2)
+    if face_mask_small is not None:
+        back_glow_small = _soften(back_small, 1.8, 5.0)
+        keep = (1.0 - face_mask_small.astype(np.float32) / 255.0)[..., None]
+        back_glow_small = np.clip(back_glow_small * keep, 0, 255).astype(np.uint8)
+        combined_small = cv2.add(combined_small, back_glow_small)
+
+    glow_full = cv2.resize(combined_small, (w, h), interpolation=cv2.INTER_LINEAR)
+    cv2.addWeighted(frame, 1.0, glow_full, 0.92, 0, dst=frame)
+    return frame
